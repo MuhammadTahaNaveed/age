@@ -1,11 +1,10 @@
 name: Formatting (pre-commit)
 
 on:
-  workflow_dispatch:
   pull_request:
-    branches:
-      - main
-
+    branches: [ "master" ]
+  push: 
+    branches: [ "master" ]
 jobs:
   pre-commit:
     name: Format
