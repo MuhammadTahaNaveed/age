@@ -18,7 +18,7 @@ jobs:
       run: sudo apt-get install clang-format-12
     - uses: pre-commit/action@v3.0.0
       with:
-        extra_args: --from-ref HEAD^ --to-ref HEAD
+        extra_args: --from-ref HEAD^ --to-ref HEAD 2>&1
       id: precommit
     - name: Upload pre-commit changes
       if: failure() && steps.precommit.outcome == 'failure'
