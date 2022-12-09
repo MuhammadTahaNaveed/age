@@ -101,8 +101,7 @@ void delete_graph(const Name graph_name)
 }
 
 // Function updates graph name in ag_graph table.
-void update_graph_name(const Name graph_name, const Name new_name)
-{
+void update_graph_name(const Name graph_name, const Name new_name) {
     ScanKeyData scan_keys[1];
     Relation ag_graph;
     SysScanDesc scan_desc;
