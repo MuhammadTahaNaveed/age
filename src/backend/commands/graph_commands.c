@@ -79,8 +79,7 @@ Datum create_graph(PG_FUNCTION_ARGS)
                 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("graph name can not be empty")));
     }
-    if (graph_exists(graph_name_str))
-    {
+    if (graph_exists(graph_name_str)){
         ereport(ERROR,
                 (errcode(ERRCODE_UNDEFINED_SCHEMA),
                         errmsg("graph \"%s\" already exists", graph_name_str)));
@@ -104,7 +103,7 @@ Datum create_graph(PG_FUNCTION_ARGS)
     PG_RETURN_VOID();
 }
 
-static Oid create_schema_for_graph(const Name graph_name)
+static Oid create_schema_for_graph(const Name graph_name)                                               
 {
     char *graph_name_str = NameStr(*graph_name);
     CreateSchemaStmt *schema_stmt;
