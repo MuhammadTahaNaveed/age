@@ -1,27 +1,42 @@
-name: Formatting (pre-commit)
+name: Code Format Test
 
 on:
   pull_request:
-    branches: [ "master", "test-format" ]
+    branches: [ "master" ]
+    paths:
+      - "src/**.c"
+      - "src/**.cpp"
+      - "src/**.h"
+
   push: 
     branches: [ "master" ]
+    paths:
+      - "src/**.c"
+      - "src/**.cpp"
+      - "src/**.h"
+
 jobs:
   pre-commit:
     name: Format
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+
     steps:
     - uses: actions/checkout@v3
+
     - uses: actions/setup-python@v4
       with:
         python-version: '3.10'
+
     - name: Install clang-format-12
       run: sudo apt-get install clang-format-12
+
     - name: Install and run pre-commit
       run: |
        python -m pip install pre-commit
        git fetch origin
        pre-commit run -a --show-diff-on-failure --color=always
       id: precommit
+
     - name: Upload pre-commit changes
       if: failure() && steps.precommit.outcome == 'failure'
       uses: rhaschke/upload-git-patch-action@main
