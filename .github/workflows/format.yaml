@@ -3,17 +3,10 @@ name: Code Format Test
 on:
   pull_request:
     branches: [ "master","test-format" ]
-    paths:
-      - "src/**.c"
-      - "src/**.cpp"
-      - "src/**.h"
 
   push: 
     branches: [ "master" ]
-    paths:
-      - "src/**.c"
-      - "src/**.cpp"
-      - "src/**.h"
+
 
 jobs:
   pre-commit:
