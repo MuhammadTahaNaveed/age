@@ -2,7 +2,7 @@ name: Code Format Test
 
 on:
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master" , "test-format"]
     paths:
       - "src/**.c"
       - "src/**.cpp"
