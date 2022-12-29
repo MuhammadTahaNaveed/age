@@ -104,7 +104,7 @@ Oid insert_label(const char *label_name, Oid label_graph, int32 label_id,
 }
 
 // DELETE FROM ag_catalog.ag_label WHERE relation = relation
-void delete_label(Oid relation) 
+void delete_label(Oid relation)
 {
     ScanKeyData scan_keys[1];
     Relation ag_label;
@@ -293,8 +293,7 @@ List *get_all_edge_labels_per_graph(EState *estate, Oid graph_oid)
     ag_label = heap_open(ag_label_relation_id(), RowExclusiveLock);
     scan_desc = heap_beginscan(ag_label, estate->es_snapshot, 2, scan_keys);
 
-    slot = ExecInitExtraTupleSlot(estate,
-                RelationGetDescr(ag_label));
+    slot = ExecInitExtraTupleSlot(estate, RelationGetDescr(ag_label));
 
     // scan through the results and get all the label names.
     while (true)
