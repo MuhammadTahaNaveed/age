@@ -104,8 +104,7 @@ Oid insert_label(const char *label_name, Oid label_graph, int32 label_id,
 }
 
 // DELETE FROM ag_catalog.ag_label WHERE relation = relation
-void delete_label(Oid relation)
-{
+void delete_label(Oid relation) {
     ScanKeyData scan_keys[1];
     Relation ag_label;
     SysScanDesc scan_desc;
@@ -132,7 +131,7 @@ void delete_label(Oid relation)
     heap_close(ag_label, RowExclusiveLock);
 }
 
-Oid get_label_oid(const char *label_name, Oid label_graph)
+Oid get_label_oid(const char *label_name, Oid label_graph)                                                          
 {
     label_cache_data *cache_data;
 

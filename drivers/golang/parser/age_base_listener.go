@@ -58,7 +58,9 @@ func (s *BaseAgeListener) EnterEdge(ctx *EdgeContext) {}
 func (s *BaseAgeListener) ExitEdge(ctx *EdgeContext) {}
 
 // EnterPath is called when production path is entered.
-func (s *BaseAgeListener) EnterPath(ctx *PathContext) {}
+func (s *BaseAgeListener) EnterPath(ctx *PathContext) {
+	
+}
 
 // ExitPath is called when production path is exited.
 func (s *BaseAgeListener) ExitPath(ctx *PathContext) {}
