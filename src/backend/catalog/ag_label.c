@@ -294,7 +294,7 @@ List *get_all_edge_labels_per_graph(EState *estate, Oid graph_oid)
     scan_desc = heap_beginscan(ag_label, estate->es_snapshot, 2, scan_keys);
 
     slot = ExecInitExtraTupleSlot(estate,
-                RelationGetDescr(ag_label));
+                 RelationGetDescr(ag_label));
 
     // scan through the results and get all the label names.
     while(true)
