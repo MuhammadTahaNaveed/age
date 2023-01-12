@@ -17,7 +17,6 @@
  * under the License.
  */
 
-
 #include "postgres.h"
 
 #include "access/genam.h"
