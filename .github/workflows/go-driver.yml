@@ -3,12 +3,12 @@ name: Go Driver Tests
 on:
   push:
     branches: [ "master" ]
-    paths: 
-      - 'drivers/golang'
+    
   pull_request:
     branches: [ "master" ]
-    paths: 
-      - 'drivers/golang'
+    
+  paths: 
+    - 'drivers/golang'
 
 jobs:
   build:
