@@ -15,10 +15,6 @@ jobs:
       matrix:
         distributions: ['zulu', 'temurin', 'microsoft']
 
-    defaults:
-      run:
-        working-directory: drivers/jdbc
-
     steps:
     - uses: actions/checkout@v3
 
