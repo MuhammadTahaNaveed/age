@@ -26,9 +26,8 @@ jobs:
 
     - name: Build and Test
       uses: nick-fields/retry@v2.8
-      working-directory: drivers/jdbc
       with:
         timeout_minutes: 5
         max_attempts: 3
         retry_on: error
-        command: gradle build
+        command: cd drivers/jdbc && gradle build
