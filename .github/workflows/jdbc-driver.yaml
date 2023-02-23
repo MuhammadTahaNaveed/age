@@ -25,8 +25,8 @@ jobs:
         java-version: '17'
 
     - name: Build and Test
+      uses: nick-fields/retry@v2.8
       working-directory: drivers/jdbc
-      uses: nick-fields/retry@v2.8.3
       with:
         timeout_minutes: 5
         max_attempts: 3
