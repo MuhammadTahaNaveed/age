@@ -29,4 +29,9 @@ jobs:
         java-version: '17'
 
     - name: Build and Test
-      run: gradle build
+      uses: nick-fields/retry@v2.8.3
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_on: error
+        command: gradle build
