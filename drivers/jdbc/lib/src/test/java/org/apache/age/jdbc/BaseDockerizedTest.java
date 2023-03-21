@@ -51,7 +51,7 @@ public class BaseDockerizedTest {
     public void beforeAll() throws Exception {
         String CORRECT_DB_PASSWORDS = "postgres";
         agensGraphContainer = new GenericContainer<>(DockerImageName
-            .parse("apache/age:latest"))
+            .parse("apache/age:PG11_latest"))
             .withEnv("POSTGRES_PASSWORD", CORRECT_DB_PASSWORDS)
             .withExposedPorts(5432);
         agensGraphContainer.start();
