@@ -14,6 +14,9 @@ jobs:
     strategy:
       matrix:
         distributions: ['zulu', 'temurin', 'microsoft']
+        
+    concurrency:
+      group: build
 
     defaults:
       run:
@@ -48,6 +51,3 @@ jobs:
       run: |
         export TAG=$TAG
         gradle build
-    concurrency:
-      group: ${{ github.workflow }}-${{ matrix.distributions }}
-      cancel-in-progress: true
