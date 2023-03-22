@@ -48,3 +48,6 @@ jobs:
       run: |
         export TAG=$TAG
         gradle build
+    concurrency:
+      group: ${{ github.workflow }}-${{ matrix.distributions }}
+      cancel-in-progress: true
