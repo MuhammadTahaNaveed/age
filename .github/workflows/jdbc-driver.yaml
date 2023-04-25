@@ -10,14 +10,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+        
     defaults:
       run:
         working-directory: drivers/jdbc
 
     steps:
     - uses: actions/checkout@v3
-
+    
     - name: Set up Java
       uses: actions/setup-java@v3
       with:
