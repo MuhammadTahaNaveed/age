@@ -10,10 +10,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        distributions: ['zulu', 'temurin', 'microsoft']
 
     defaults:
       run:
@@ -25,7 +21,7 @@ jobs:
     - name: Set up Java
       uses: actions/setup-java@v3
       with:
-        distribution: ${{ matrix.distributions }}
+        distribution: 'zulu'
         java-version: '17'
 
     - name: Set tag based on branch
