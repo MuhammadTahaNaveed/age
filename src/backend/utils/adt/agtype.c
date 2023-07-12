@@ -145,10 +145,19 @@ static agtype_value *execute_array_access_operator_internal(agtype *array,
 static agtype_value *execute_map_access_operator(agtype *map,
                                                  agtype_value* map_value,
                                                  agtype *key);
-static agtype_value *execute_map_access_operator_internal(
-    agtype *map, agtype_value *map_value, char *key, int key_len);
-Datum agtype_object_field_impl(FunctionCallInfo fcinfo, bool as_text);
-Datum agtype_array_element_impl(FunctionCallInfo fcinfo, bool as_text);
+static agtype_value *execute_map_access_operator_internal(agtype *map,
+                                                          agtype_value *map_value,
+                                                          char *key,
+                                                          int key_len);
+static Datum agtype_object_field_impl(FunctionCallInfo fcinfo,
+                                      agtype *agtype_in,
+                                      char *key, int key_len, bool as_text);
+static Datum agtype_array_element_impl(FunctionCallInfo fcinfo,
+                                       agtype *agtype_in, int element,
+                                       bool as_text);
+static Datum process_access_operator_result(FunctionCallInfo fcinfo,
+                                            agtype_value *agtv,
+                                            bool as_text);
 /* typecast functions */
 static void agtype_typecast_object(agtype_in_state *state, char *annotation);
 static void agtype_typecast_array(agtype_in_state *state, char *annotation);
@@ -3334,28 +3343,32 @@ static int extract_variadic_args_min(FunctionCallInfo fcinfo,
     return nargs;
 }
 
-/*
- * get agtype object field
- */
-Datum agtype_object_field_impl(FunctionCallInfo fcinfo, bool as_text)
+static Datum process_access_operator_result(FunctionCallInfo fcinfo,
+                                            agtype_value *agtv,
+                                            bool as_text)
 {
-    agtype *agtype_in = AG_GET_ARG_AGTYPE_P(0);
-    text *key = PG_GETARG_TEXT_PP(1);
-    agtype_value *v;
-
-    if (!AGT_ROOT_IS_OBJECT(agtype_in))
-    {
-        PG_RETURN_NULL();
-    }
-
-    v = execute_map_access_operator_internal(agtype_in, NULL, VARDATA_ANY(key),
-                                             VARSIZE_ANY_EXHDR(key));
-
-    if (v != NULL)
+    if (agtv != NULL)
     {
         if (as_text)
         {
-            text *result = agtype_value_to_text(v, false);
+            text *result;
+
+            if (agtv->type == AGTV_BINARY)
+            {
+                StringInfo out = makeStringInfo();
+                agtype_container *agtc = (agtype_container *)agtv->val.binary.data;
+                char *str;
+
+                str = agtype_to_cstring_worker(out, agtc,
+                                               agtv->val.binary.len,
+                                               false);
+
+                result = cstring_to_text(str);
+            }
+            else
+            {
+                result = agtype_value_to_text(agtv, false);
+            }
 
             if (result)
             {
@@ -3364,20 +3377,16 @@ Datum agtype_object_field_impl(FunctionCallInfo fcinfo, bool as_text)
         }
         else
         {
-            AG_RETURN_AGTYPE_P(agtype_value_to_agtype(v));
+            AG_RETURN_AGTYPE_P(agtype_value_to_agtype(agtv));
         }
     }
 
     PG_RETURN_NULL();
 }
 
-/*
- * get agtype array element
- */
-Datum agtype_array_element_impl(FunctionCallInfo fcinfo, bool as_text)
+Datum agtype_array_element_impl(FunctionCallInfo fcinfo, agtype *agtype_in,
+                                int element, bool as_text)
 {
-    agtype *agtype_in = AG_GET_ARG_AGTYPE_P(0);
-    int element = PG_GETARG_INT32(1);
     agtype_value *v;
 
     if (!AGT_ROOT_IS_ARRAY(agtype_in))
@@ -3385,60 +3394,131 @@ Datum agtype_array_element_impl(FunctionCallInfo fcinfo, bool as_text)
         PG_RETURN_NULL();
     }
 
-    if (element < 0)
+    v = execute_array_access_operator_internal(agtype_in, NULL, element);
+
+    return process_access_operator_result(fcinfo, v, as_text);
+}
+
+Datum agtype_object_field_impl(FunctionCallInfo fcinfo, agtype *agtype_in,
+                               char *key, int key_len, bool as_text)
+{
+    agtype_value *v;
+
+    if (!AGT_ROOT_IS_OBJECT(agtype_in))
     {
         PG_RETURN_NULL();
     }
 
-    v = execute_array_access_operator_internal(agtype_in, NULL, element);
+    v = execute_map_access_operator_internal(agtype_in, NULL, key, key_len);
 
-    if (v != NULL)
+    return process_access_operator_result(fcinfo, v, as_text);
+}
+
+PG_FUNCTION_INFO_V1(agtype_object_field_agtype);
+Datum agtype_object_field_agtype(PG_FUNCTION_ARGS)
+{
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    agtype *key = AG_GET_ARG_AGTYPE_P(1);
+    agtype_value *key_value;
+
+    if (!AGT_ROOT_IS_SCALAR(key))
     {
-        if (as_text)
-        {
-            text *result = agtype_value_to_text(v, false);
-
-            if (result)
-            {
-                PG_RETURN_TEXT_P(result);
-            }
-        }
-        else
-        {
-            AG_RETURN_AGTYPE_P(agtype_value_to_agtype(v));
-        }
+        PG_RETURN_NULL();
     }
 
-    PG_RETURN_NULL();
+    key_value = get_ith_agtype_value_from_container(&key->root, 0);
+
+    if (key_value->type == AGTV_INTEGER)
+    {
+        PG_RETURN_TEXT_P(agtype_array_element_impl(fcinfo, agt,
+                                                   key_value->val.int_value,
+                                                   false));
+    }
+    else if (key_value->type == AGTV_STRING)
+    {
+        AG_RETURN_AGTYPE_P(agtype_object_field_impl(fcinfo, agt,
+                                                    key_value->val.string.val,
+                                                    key_value->val.string.len,
+                                                    false));
+    }
+    else
+    {
+        PG_RETURN_NULL();
+    }
+}
+
+PG_FUNCTION_INFO_V1(agtype_object_field_text_agtype);
+Datum agtype_object_field_text_agtype(PG_FUNCTION_ARGS)
+{
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    agtype *key = AG_GET_ARG_AGTYPE_P(1);
+    agtype_value *key_value;
+
+    if (!AGT_ROOT_IS_SCALAR(key))
+    {
+        PG_RETURN_NULL();
+    }
+
+    key_value = get_ith_agtype_value_from_container(&key->root, 0);
+
+    if (key_value->type == AGTV_INTEGER)
+    {
+        PG_RETURN_TEXT_P(agtype_array_element_impl(fcinfo, agt,
+                                                   key_value->val.int_value,
+                                                   true));
+    }
+    else if (key_value->type == AGTV_STRING)
+    {
+        AG_RETURN_AGTYPE_P(agtype_object_field_impl(fcinfo, agt,
+                                                    key_value->val.string.val,
+                                                    key_value->val.string.len,
+                                                    true));
+    }
+    else
+    {
+        PG_RETURN_NULL();
+    }
 }
 
 PG_FUNCTION_INFO_V1(agtype_object_field);
 Datum agtype_object_field(PG_FUNCTION_ARGS)
 {
-    return agtype_object_field_impl(fcinfo, false);
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    text *key = PG_GETARG_TEXT_PP(1);
+
+    AG_RETURN_AGTYPE_P(agtype_object_field_impl(fcinfo, agt, VARDATA_ANY(key),
+                                                VARSIZE_ANY_EXHDR(key), false));
 }
 
 PG_FUNCTION_INFO_V1(agtype_object_field_text);
 Datum agtype_object_field_text(PG_FUNCTION_ARGS)
 {
-    return agtype_object_field_impl(fcinfo, true);
+
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    text *key = PG_GETARG_TEXT_PP(1);
+
+    PG_RETURN_TEXT_P(agtype_object_field_impl(fcinfo, agt, VARDATA_ANY(key),
+                                              VARSIZE_ANY_EXHDR(key), true));
 }
 
 PG_FUNCTION_INFO_V1(agtype_array_element);
 Datum agtype_array_element(PG_FUNCTION_ARGS)
 {
-    return agtype_array_element_impl(fcinfo, false);
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    int elem = PG_GETARG_INT32(1);
+
+    AG_RETURN_AGTYPE_P(agtype_array_element_impl(fcinfo, agt, elem, false));
 }
 
 PG_FUNCTION_INFO_V1(agtype_array_element_text);
 Datum agtype_array_element_text(PG_FUNCTION_ARGS)
 {
-    return agtype_array_element_impl(fcinfo, true);
+    agtype *agt = AG_GET_ARG_AGTYPE_P(0);
+    int elem = PG_GETARG_INT32(1);
+
+    PG_RETURN_TEXT_P(agtype_array_element_impl(fcinfo, agt, elem, true));
 }
 
-/*
- * Returns properties
- */
 agtype_value *extract_entity_properties(agtype *object, bool error_on_scalar)
 {
     agtype_value *scalar_value = NULL;
@@ -3505,8 +3585,9 @@ Datum agtype_access_operator(PG_FUNCTION_ARGS)
     int i = 0;
 
     /* extract our args, we need at least 2 */
-    nargs = extract_variadic_args_min(fcinfo, 0, true, &args, &types, &nulls,
-                                      2);
+    nargs = extract_variadic_args_min(fcinfo, 0, true, &args,
+                                      &types, &nulls, 2);
+
     /* return NULL if we don't have the minimum number of args */
     if (args == NULL || nargs == 0 || nulls[0] == true)
     {
@@ -3519,35 +3600,12 @@ Datum agtype_access_operator(PG_FUNCTION_ARGS)
     /* if the object is a scalar, it must be a vertex or edge */
     if (AGT_ROOT_IS_SCALAR(object))
     {
-        agtype_value *scalar_value = NULL;
-        agtype_value *property_value = NULL;
+        object_value = extract_entity_properties(object, true);
 
-        /* unpack the scalar */
-        scalar_value = get_ith_agtype_value_from_container(&object->root, 0);
-
-        /* get the properties depending on the type or fail */
-        if (scalar_value->type == AGTV_VERTEX)
-        {
-            property_value = &scalar_value->val.object.pairs[2].value;
-        }
-        else if (scalar_value->type == AGTV_EDGE)
-        {
-            property_value = &scalar_value->val.object.pairs[4].value;
-        }
-        else
-        {
-            ereport(ERROR,(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                           errmsg("scalar object must be a vertex or edge")));
-        }
-
-        /* if the properties are NULL, return NULL */
-        if (property_value == NULL || property_value->type == AGTV_NULL)
+        if (object_value == NULL)
         {
             PG_RETURN_NULL();
         }
-
-        /* set the object_value to the property_value. */
-        object_value = property_value;
     }
 
     /* check for NULL keys */
@@ -5950,13 +6008,15 @@ agtype_iterator *get_next_list_element(agtype_iterator *it,
     Assert(itok == WAGT_ELEM || WAGT_END_ARRAY);
 
     /* if this is the end of the array return NULL */
-    if (itok == WAGT_END_ARRAY) {
+    if (itok == WAGT_END_ARRAY)
+    {
         return NULL;
     }
 
-    /* this should be the element, copy it */
-    if (itok == WAGT_ELEM) {
-        memcpy(elem, &tmp, sizeof(agtype_value));
+    /* this should be the element, set tmp to elem */
+    if (itok == WAGT_ELEM)
+    {
+        *elem = tmp;
     }
 
     return it;
@@ -9782,7 +9842,7 @@ static agtype_iterator *get_next_object_key(agtype_iterator *it,
     /* this should be the key, copy it */
     if (itok == WAGT_KEY)
     {
-        memcpy(key, &tmp, sizeof(agtype_value));
+        *key = tmp;
     }
 
     /*

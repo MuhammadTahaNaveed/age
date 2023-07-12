@@ -2351,19 +2351,22 @@ SELECT agtype_access_operator('{"bool":false, "int":3, "float":3.14}', '2');
 ERROR:  AGTV_INTEGER is not a valid key type
 SELECT agtype_access_operator('{"bool":false, "int":3, "float":3.14}', '2.0');
 ERROR:  AGTV_FLOAT is not a valid key type
-SELECT i, pg_typeof(i) FROM (SELECT '{"bool":true, "array":[1,3,{"bool":false, "int":3, "float":3.14},7], "float":3.14}'::agtype->'array'->2->'float' as i) a;
+/*
+ * -> Operator
+ */
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":true, "array":[1,3,{"bool":false, "int":3, "float":3.14},7], "float":3.14}'::agtype->'array'::text->2->'float'::text as i) a;
   i   | pg_typeof 
 ------+-----------
  3.14 | agtype
 (1 row)
 
-SELECT i, pg_typeof(i) FROM (SELECT '{"bool":true, "array":[1,3,{"bool":false, "int":3, "float":3.14},7], "float":3.14}'::agtype->'array'->2->>'float' as i) a;
-  i   | pg_typeof 
-------+-----------
- 3.14 | text
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":true, "array":[1,3,{"bool":false, "int":3, "float":3.14},7], "float":3.14}'::agtype->'array'::text as i) a;
+                          i                          | pg_typeof 
+-----------------------------------------------------+-----------
+ [1, 3, {"int": 3, "bool": false, "float": 3.14}, 7] | agtype
 (1 row)
 
-SELECT i, pg_typeof(i) FROM (SELECT '{}'::agtype->'array' as i) a;
+SELECT i, pg_typeof(i) FROM (SELECT '{}'::agtype->'array'::text as i) a;
  i | pg_typeof 
 ---+-----------
    | agtype
@@ -2387,7 +2390,7 @@ SELECT i, pg_typeof(i) FROM (SELECT '[0, 1]'::agtype->3 as i) a;
    | agtype
 (1 row)
 
-SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'true' as i) a;
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'true'::text as i) a;
  i | pg_typeof 
 ---+-----------
    | agtype
@@ -2399,16 +2402,390 @@ SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agt
    | agtype
 (1 row)
 
-SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'true'->2 as i) a;
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'true'::text->>2 as i) a;
+ i | pg_typeof 
+---+-----------
+   | text
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":true, "array":[1,3,{"bool":false, "int":3, "float":3.14},7], "float":3.14}'::agtype->'"array"'::agtype->'2'::agtype->'"float"'::agtype as i) a;
+  i   | pg_typeof 
+------+-----------
+ 3.14 | agtype
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '[]'::agtype->'0'::agtype as i) a;
  i | pg_typeof 
 ---+-----------
    | agtype
 (1 row)
 
-SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'true'->>2 as i) a;
+SELECT i, pg_typeof(i) FROM (SELECT '[0, 1]'::agtype->'2'::agtype as i) a;
+ i | pg_typeof 
+---+-----------
+   | agtype
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '[0, 1]'::agtype->'3'::agtype as i) a;
+ i | pg_typeof 
+---+-----------
+   | agtype
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'"float"'::agtype as i) a;
+  i   | pg_typeof 
+------+-----------
+ 3.14 | agtype
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'"true"'::agtype->'2'::agtype as i) a;
+ i | pg_typeof 
+---+-----------
+   | agtype
+(1 row)
+
+SELECT i, pg_typeof(i) FROM (SELECT '{"bool":false, "int":3, "float":3.14}'::agtype->'"true"'::agtype->>'2'::agtype as i) a;
  i | pg_typeof 
 ---+-----------
    | text
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"n"'::agtype;
+ ?column? 
+----------
+ null
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"a"'::agtype;
+ ?column? 
+----------
+ 1
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"b"'::agtype;
+ ?column? 
+----------
+ [1, 2]
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"c"'::agtype;
+ ?column? 
+----------
+ {"1": 2}
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"d"'::agtype;
+   ?column?    
+---------------
+ {"1": [2, 3]}
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"d"'::agtype -> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"e"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '0'::agtype;
+ ?column? 
+----------
+ "a"
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '1'::agtype;
+ ?column? 
+----------
+ "b"
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '2'::agtype;
+ ?column? 
+----------
+ "c"
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '3'::agtype;
+ ?column? 
+----------
+ [1, 2]
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '3'::agtype -> '1'::agtype;
+ ?column? 
+----------
+ 2
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '4'::agtype;
+ ?column? 
+----------
+ null
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '5'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '-1'::agtype;
+ ?column? 
+----------
+ null
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '-5'::agtype;
+ ?column? 
+----------
+ "a"
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '-6'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+-- edge cases
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype -> null::text;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype -> null::int;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype -> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype -> '"z"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype -> '""'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype -> '1'::agtype;
+  ?column?   
+-------------
+ {"b": "cc"}
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype -> '3'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype -> '"z"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": "c", "b": null}'::agtype -> '"b"'::agtype;
+ ?column? 
+----------
+ null
+(1 row)
+
+select '"foo"'::agtype -> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '"foo"'::agtype -> '"z"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+/*
+ * ->> operator
+ */
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"n"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"a"'::agtype;
+ ?column? 
+----------
+ 1
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"b"'::agtype;
+ ?column? 
+----------
+ [1, 2]
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"c"'::agtype;
+ ?column? 
+----------
+ {"1": 2}
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"d"'::agtype;
+   ?column?    
+---------------
+ {"1": [2, 3]}
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype -> '"d"'::agtype ->> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ->> '"e"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '0'::agtype;
+ ?column? 
+----------
+ a
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '1'::agtype;
+ ?column? 
+----------
+ b
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '2'::agtype;
+ ?column? 
+----------
+ c
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '3'::agtype;
+ ?column? 
+----------
+ [1, 2]
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype -> '3'::agtype ->> '1'::agtype;
+ ?column? 
+----------
+ 2
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '4'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '5'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '-1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '-5'::agtype;
+ ?column? 
+----------
+ a
+(1 row)
+
+SELECT '["a","b","c",[1,2],null]'::agtype ->> '-6'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> null::text;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> null::int;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> "'z'"::agtype;
+ERROR:  column "'z'" does not exist
+LINE 1: ...ct '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> "'z'"::agt...
+                                                             ^
+select '{"a": [{"b": "c"}, {"b": "cc"}]}'::agtype ->> '""'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype ->> '1'::agtype;
+  ?column?   
+-------------
+ {"b": "cc"}
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype ->> '3'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '[{"b": "c"}, {"b": "cc"}]'::agtype ->> '"z"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '{"a": "c", "b": null}'::agtype ->> '"b"'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '"foo"'::agtype ->> '1'::agtype;
+ ?column? 
+----------
+ 
+(1 row)
+
+select '"foo"'::agtype ->> '"z"'::agtype;
+ ?column? 
+----------
+ 
 (1 row)
 
 -- Test duplicate keys and null value
