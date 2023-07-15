@@ -41,8 +41,6 @@ static agtype_value *iterator_concat(agtype_iterator **it1,
 static void concat_to_agtype_string(agtype_value *result, char *lhs, int llen,
                                     char *rhs, int rlen);
 static char *get_string_from_agtype_value(agtype_value *agtv, int *length);
-static agtype *delete_from_object(agtype *agt, char *keyptr, int keylen);
-static agtype *delete_from_array(agtype *agt, int idx);
 
 static void concat_to_agtype_string(agtype_value *result, char *lhs, int llen,
                                     char *rhs, int rlen)
@@ -262,140 +260,6 @@ Datum agtype_any_add(PG_FUNCTION_ARGS)
     AG_RETURN_AGTYPE_P(DATUM_GET_AGTYPE_P(result));
 }
 
-/*
- * For the given index delete that element from the passed in agtype
- * array.
- */
-static agtype *delete_from_array(agtype *agt, int idx)
-{
-    agtype_parse_state *state = NULL;
-    agtype_iterator *it;
-    uint32 i = 0, n;
-    agtype_value v, *res = NULL;
-    agtype_iterator_token r;
-
-    if (AGT_ROOT_IS_SCALAR(agt) || AGT_ROOT_IS_OBJECT(agt))
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("cannot delete from scalar")));
-    }
-
-    if (AGT_ROOT_IS_OBJECT(agt))
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("cannot delete from object using integer index")));
-    }
-
-    // array is empty, pass the original object
-    if (AGT_ROOT_COUNT(agt) == 0)
-    {
-        return agt;
-    }
-
-    it = agtype_iterator_init(&agt->root);
-
-    r = agtype_iterator_next(&it, &v, false);
-    Assert(r == WAGT_BEGIN_ARRAY);
-    n = v.val.array.num_elems;
-
-    // invert the index if negative.
-    if (idx < 0)
-    {
-        if (-idx > n)
-        {
-            idx = n;
-        }
-        else
-        {
-            idx = n + idx;
-        }
-    }
-
-    // index is out of bounds, return the original array
-    if (idx >= n)
-    {
-        return agt;
-    }
-
-    push_agtype_value(&state, r, NULL);
-
-    while ((r = agtype_iterator_next(&it, &v, true)) != WAGT_DONE)
-    {
-        if (r == WAGT_ELEM)
-        {
-            // skip the element at the index.
-            if (i++ == idx)
-            {
-                continue;
-            }
-        }
-
-        res = push_agtype_value(&state, r, r < WAGT_BEGIN_ARRAY ? &v : NULL);
-    }
-
-    Assert(res != NULL);
-
-    return agtype_value_to_agtype(res);
-}
-
-/*
- * For the given key delete that property from the passed in agtype
- * object.
- */
-static agtype *delete_from_object(agtype *agt, char *keyptr, int keylen)
-{
-    agtype_parse_state *state = NULL;
-    agtype_iterator *it;
-    agtype_value v, *res = NULL;
-    bool skipNested = false;
-    agtype_iterator_token r;
-
-    if (!AGT_ROOT_IS_OBJECT(agt))
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("cannot delete from scalar or array")));
-    }
-
-    if (AGT_ROOT_COUNT(agt) == 0)
-    {
-        return agt;
-    }
-
-    it = agtype_iterator_init(&agt->root);
-
-    while ((r = agtype_iterator_next(&it, &v, skipNested)) != WAGT_DONE)
-    {
-        skipNested = true;
-
-        /*
-         * Checks the key to compare against the passed in key to be
-         * deleted. do not add the key and value to the new agtype being
-         * constructed.
-         */
-        if ((r == WAGT_ELEM || r == WAGT_KEY) &&
-            (v.type == AGTV_STRING && keylen == v.val.string.len &&
-             memcmp(keyptr, v.val.string.val, keylen) == 0))
-        {
-            /* skip corresponding value as well */
-            if (r == WAGT_KEY)
-            {
-                (void) agtype_iterator_next(&it, &v, true);
-            }
-
-            continue;
-        }
-
-        res = push_agtype_value(&state, r, r < WAGT_BEGIN_ARRAY ? &v : NULL);
-    }
-
-    Assert(res != NULL);
-
-    return agtype_value_to_agtype(res);
-}
-
 PG_FUNCTION_INFO_V1(agtype_sub);
 
 /*
@@ -409,81 +273,16 @@ Datum agtype_sub(PG_FUNCTION_ARGS)
     agtype_value *agtv_rhs;
     agtype_value agtv_result;
 
-    /*
-     * Logic to handle when a the rhs is a non array scalar array. In this
-     * case, if the left hand side is an object, the values in the rhs array
-     * are keys to be removed from the object.
-     */
-    if (AGT_ROOT_IS_ARRAY(rhs) && !AGT_ROOT_IS_SCALAR(rhs))
+    if (!(AGT_ROOT_IS_SCALAR(lhs)) || !(AGT_ROOT_IS_SCALAR(rhs)))
     {
-        agtype_iterator *it = NULL;
-        agtype_value elem;
+        ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+                        errmsg("must be scalar value, not array or object")));
 
-        if(!AGT_ROOT_IS_OBJECT(lhs))
-        {
-            ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                    errmsg("must be object, not a scalar value or array")));
-        }
-
-        while ((it = get_next_list_element(it, &rhs->root, &elem)))
-        {
-            if (elem.type == AGTV_STRING)
-            {
-                 lhs = delete_from_object(lhs, elem.val.string.val, elem.val.string.len);
-            }
-            else
-            {
-                ereport(ERROR,
-                        (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                         errmsg("expected agtype string, not agtype %s",
-                                agtype_value_type_to_string(elem.type))));
-            }
-        }
-
-        AG_RETURN_AGTYPE_P(lhs);
-    }
-
-
-    /*
-     * When the lhs is an object and rhs is a string, remove the key from
-     * the object. When the lhs is an array and the rhs is an integer then
-     * remove the index value from the array, otherwise let it pass to the
-     * default logic.
-     */
-    if(!AGT_ROOT_IS_SCALAR(lhs))
-    {
-        if (AGT_ROOT_IS_OBJECT(lhs))
-        {
-            agtype_value *key;
-
-            key = get_ith_agtype_value_from_container(&rhs->root, 0);
-
-            AG_RETURN_AGTYPE_P(delete_from_object(lhs, key->val.string.val,
-                                                  key->val.string.len));
-        }
-        else if (AGT_ROOT_IS_ARRAY(lhs))
-        {
-            agtype_value *key;
-
-            key = get_ith_agtype_value_from_container(&rhs->root, 0);
-
-            AG_RETURN_AGTYPE_P(delete_from_array(lhs, key->val.int_value));
-        }
+        PG_RETURN_NULL();
     }
 
     agtv_lhs = get_ith_agtype_value_from_container(&lhs->root, 0);
     agtv_rhs = get_ith_agtype_value_from_container(&rhs->root, 0);
-
-
-    if (!(AGT_ROOT_IS_SCALAR(lhs)) || !(AGT_ROOT_IS_SCALAR(rhs)))
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("agtype %s - agtype %s not supported",
-                         agtype_value_type_to_string(agtv_lhs->type),
-                         agtype_value_type_to_string(agtv_rhs->type))));
-    }
-
 
     if (agtv_lhs->type == AGTV_INTEGER && agtv_rhs->type == AGTV_INTEGER)
     {
@@ -522,10 +321,8 @@ Datum agtype_sub(PG_FUNCTION_ARGS)
         agtv_result.val.numeric = DatumGetNumeric(numd);
     }
     else
-    {
         ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
                         errmsg("Invalid input parameter types for agtype_sub")));
-    }
 
     AG_RETURN_AGTYPE_P(agtype_value_to_agtype(&agtv_result));
 }
