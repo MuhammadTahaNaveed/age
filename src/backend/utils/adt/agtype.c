@@ -3403,13 +3403,23 @@ Datum agtype_object_field_impl(FunctionCallInfo fcinfo, agtype *agtype_in,
                                char *key, int key_len, bool as_text)
 {
     agtype_value *v;
+    agtype* process_agtype;
 
-    if (!AGT_ROOT_IS_OBJECT(agtype_in))
+    if (AGT_ROOT_IS_SCALAR(agtype_in))
+    {
+        process_agtype = agtype_value_to_agtype(extract_entity_properties(agtype_in, false));
+    } 
+    else 
+    {
+        process_agtype = agtype_in;
+    }
+
+    if (!AGT_ROOT_IS_OBJECT(process_agtype))
     {
         PG_RETURN_NULL();
     }
 
-    v = execute_map_access_operator_internal(agtype_in, NULL, key, key_len);
+    v = execute_map_access_operator_internal(process_agtype, NULL, key, key_len);
 
     return process_access_operator_result(fcinfo, v, as_text);
 }
