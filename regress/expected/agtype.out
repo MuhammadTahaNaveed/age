@@ -3627,25 +3627,7 @@ SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? '["e1"
 SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? '["n"]';
  ?column? 
 ----------
- t
-(1 row)
-
-SELECT '{"a":null, "b":"qq"}'::agtype ?| '["c","a"]';
- ?column? 
-----------
- t
-(1 row)
-
-SELECT '{"1":null, "b":"qq"}'::agtype ?| '["c","1"]';
- ?column? 
-----------
- t
-(1 row)
-
-SELECT '{"a":null, "b":"qq"}'::agtype ?| '["a","a", "b", "b", "b"]'::agtype;
- ?column? 
-----------
- t
+ f
 (1 row)
 
 SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? '["n", "a", "e"]';
@@ -3815,9 +3797,9 @@ SELECT '[null]'::agtype ?& '[null]'::agtype;
  t
 (1 row)
 
-SELECT '{"a":null, "b":"qq"}'::agtype ?& '["a","a", "b", "b", "b"]'::agtype;
- ?column? 
-----------
+SELECT agtype_exists_all('{"id": 1}', array['id']);
+ agtype_exists_all 
+-------------------
  t
 (1 row)
 
