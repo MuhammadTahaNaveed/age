@@ -395,7 +395,7 @@ RETURN false XOR false
 $$) AS r(result boolean);
 
 SELECT * FROM cypher('expr', $$
-RETURN false OR 1::bool    
+RETURN false OR 1::bool
 $$) AS (result boolean);
 
 SELECT * FROM cypher('expr', $$
@@ -403,7 +403,7 @@ RETURN false AND NOT 1::bool
 $$) AS (result boolean);
 
 SELECT * FROM cypher('expr', $$
-RETURN NOT 1::bool::int::bool    
+RETURN NOT 1::bool::int::bool
 $$) AS (result boolean);
 
 -- Invalid operands for AND, OR, NOT, XOR
@@ -420,11 +420,11 @@ RETURN false OR 1
 $$) AS r(result boolean);
 
 SELECT * FROM cypher('expr', $$
-RETURN 0 OR true 
+RETURN 0 OR true
 $$) AS r(result boolean);
 
 SELECT * FROM cypher('expr', $$
-RETURN NOT 1    
+RETURN NOT 1
 $$) AS r(result boolean);
 
 SELECT * FROM cypher('expr', $$
@@ -452,7 +452,7 @@ RETURN false XOR 1::numeric
 $$) AS (result agtype);
 
 SELECT * FROM cypher('expr', $$
-RETURN false OR 1::bool::int    
+RETURN false OR 1::bool::int
 $$) AS (result boolean);
 --
 -- Test indirection transform logic for object.property, object["property"],
@@ -504,8 +504,6 @@ SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json ? 'd' $$) as (a
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.list ? 'd' $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.b ? 'c' $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.c ? 'e' $$) as (a agtype);
-
--- errors out
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ? [] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ? ['d'] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ? {d: 'e'} $$) as (a agtype);
@@ -527,11 +525,11 @@ SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| [] $$) as (a agty
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| ['a', 'b'] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.b ?| [] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.c ?| ['c'] $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| [['list']] $$) as (a agtype);
 
 -- errors out
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| 'list' $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| n $$) as (a agtype);
-SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?| [['list']] $$) as (a agtype);
 
 -- Exists (?&)
 
@@ -546,6 +544,7 @@ SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& ['a', 'b'] $$) as
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.b ?& [] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.b ?& ['a', 'b', 'c'] $$) as (a agtype);
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n.json.c ?& ['d', 'e'] $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& [['list']] $$) as (a agtype);
 
 -- errors out
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& 'list' $$) as (a agtype);
@@ -570,6 +569,107 @@ SELECT * FROM cypher('jsonb_operators', $$ MATCH (n) RETURN n.json || [1, 2, 3] 
 SELECT * FROM cypher('jsonb_operators', $$ MATCH (n) RETURN n.json || 1 $$) AS (result agtype);
 SELECT * FROM cypher('jsonb_operators', $$ MATCH (n) RETURN n.json || n.json $$) AS (result agtype);
 SELECT * FROM cypher('jsonb_operators', $$ MATCH (n) RETURN n.json || n $$) AS (result agtype);
+
+/*
+ * access operator ->
+ */
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-1
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->1 
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4->'array'
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4->'array'->-2->'bool'
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4->'array'->-2->'bool'->-1
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->(size(lst)-1)        
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->(size(lst)) 
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->(size(lst)%size(lst))
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4->'array'->-2->'float'
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators', $$
+    WITH [1,
+        {bool: true, int: 3, array: [9, 11, {bool: false, float: 3.14}, 13]},
+        5, 7, 9] as lst
+    RETURN lst->-4->'array'->-2->'float'->0 
+$$) AS r(result agtype);
+
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'a' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'a'->-1 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'b' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'b'->-2 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'b'->1 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'b'->'a' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'c' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'c'->0 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'c'->'d' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'c'->'d'->-1->0 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'json'->'d' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'list' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'list'->-1 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'list'->'c' $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n->'list'->2->0 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) WITH n->'list' AS lst RETURN lst $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) WITH n->'list' AS lst RETURN lst->0 $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) WITH n->'list' AS lst RETURN lst->(size(lst)-1) $$) as (a agtype);
+SELECT * FROM cypher('jsonb_operators',$$MATCH (n) WITH n->'list' AS lst RETURN lst->(size(lst)) $$) as (a agtype);
 
 --
 -- clean up
@@ -1457,6 +1557,7 @@ SELECT * FROM age_toString(false);
 SELECT * FROM age_toString('a string');
 SELECT * FROM age_toString('a cstring'::cstring);
 SELECT * FROM age_toString('a text string'::text);
+SELECT * FROM age_toString(pg_typeof(3.14));
 -- agtypes
 SELECT * FROM age_toString(agtype_in('3'));
 SELECT * FROM age_toString(agtype_in('3.14'));
@@ -2804,9 +2905,47 @@ SELECT * FROM cypher('list',$$ MATCH p=(n:xyz)-[e]->() SET n.array=[0, 1, 2, 3, 
                                                            90, 91, 92, 93, 94, 95, 96, 97, 98, 99,
                                                            e.array, 100] return n,e $$) as (a agtype, b agtype);
 
+-- pg_typeof
+SELECT * FROM cypher('expr', $$MATCH (u) RETURN toString(pg_catalog.pg_typeof(u.id)) $$) AS (u agtype);
+
+-- issue: 395 aggregate function collect() incorrect container for operation
+SELECT create_graph('graph_395');
+SELECT * FROM cypher('graph_395', $$ CREATE (n:Project {name: 'Project A'}),
+                                            (m:Project {name: 'Project B'}),
+                                            (a:Task {name: 'Task A', size: 10}),
+                                            (b:Task {name: 'Task B', size: 5}),
+                                            (c:Task {name: 'Task C', size: 7}),
+                                            (x:Person {name: 'John', age: 55}),
+                                            (y:Person {name: 'Bob', age: 43}),
+                                            (z:Person {name: 'Alice', age: 33}),
+                                            (n)-[:Has]->(a),
+                                            (n)-[:Has]->(b),
+                                            (m)-[:Has]->(c),
+                                            (a)-[:AssignedTo]->(x),
+                                            (b)-[:AssignedTo]->(y),
+                                            (c)-[:AssignedTo]->(y) $$) as (n agtype);
+
+SELECT * FROM cypher('graph_395', $$ MATCH (p:Project)-[:Has]->(t:Task)-[:AssignedTo]->(u:Person)
+                                     WITH p, t, collect(u) AS users
+                                     WITH p, {tn: t.name, users: users} AS task
+                                     RETURN task $$) AS (p agtype);
+
+SELECT * FROM cypher('graph_395', $$ MATCH (p:Project)-[:Has]->(t:Task)-[:AssignedTo]->(u:Person)
+                                     WITH p, t, collect(u) AS users
+                                     WITH p, {tn: t.name, users: users} AS task
+                                     WITH p, collect(task) AS tasks
+                                     RETURN tasks $$) AS (p agtype);
+
+SELECT * FROM cypher('graph_395', $$ MATCH (p:Project)-[:Has]->(t:Task)-[:AssignedTo]->(u:Person)
+                                     WITH p, t, collect(u) AS users
+                                     WITH p, {tn: t.name, users: users} AS task
+                                     WITH p, collect(task) AS tasks
+                                     WITH {pn: p.name, tasks:tasks} AS project
+                                     RETURN project $$) AS (p agtype);
 --
 -- Cleanup
 --
+SELECT * FROM drop_graph('graph_395', true);
 SELECT * FROM drop_graph('chained', true);
 SELECT * FROM drop_graph('VLE', true);
 SELECT * FROM drop_graph('case_statement', true);

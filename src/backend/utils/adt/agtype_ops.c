@@ -1004,9 +1004,7 @@ Datum agtype_exists_agtype(PG_FUNCTION_ARGS)
     }
     else
     {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("invalid agtype value for key")));
+        PG_RETURN_BOOL(false);
     }
 
     str = get_string_from_agtype_value(aval, &aval->val.string.len);
@@ -1030,7 +1028,6 @@ Datum agtype_exists_any_agtype(PG_FUNCTION_ARGS)
     agtype *keys = AG_GET_ARG_AGTYPE_P(1);
     agtype_value elem;
     agtype_iterator *it = NULL;
-    char *str = NULL;
 
     if (AGT_ROOT_IS_SCALAR(agt))
     {
@@ -1041,22 +1038,20 @@ Datum agtype_exists_any_agtype(PG_FUNCTION_ARGS)
     {
         while ((it = get_next_list_element(it, &keys->root, &elem)))
         {
-            if (IS_A_AGTYPE_SCALAR(&elem))
+            //check for null
+            if (IS_A_AGTYPE_SCALAR(&elem) && !(&elem)->type == AGTV_NULL)
             {
-                str = get_string_from_agtype_value(&elem, &(&elem)->val.string.len);
-
                 if (find_agtype_value_from_container(&agt->root,
                                                      AGT_FOBJECT | AGT_FARRAY,
-                                                     string_to_agtype_value(str)))
+                                                     &elem))
                 {
                     PG_RETURN_BOOL(true);
                 }
             }
             else
             {
-                ereport(ERROR,
-                        (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                        errmsg("invalid agtype value for key")));
+
+                PG_RETURN_BOOL(false);
             }
         }
     }
@@ -1082,8 +1077,6 @@ Datum agtype_exists_all_agtype(PG_FUNCTION_ARGS)
     agtype *keys = AG_GET_ARG_AGTYPE_P(1);
     agtype_value elem;
     agtype_iterator *it = NULL;
-    char *str = NULL;
-    bool empty_flag = true;
 
     if (AGT_ROOT_IS_SCALAR(agt))
     {
@@ -1094,23 +1087,18 @@ Datum agtype_exists_all_agtype(PG_FUNCTION_ARGS)
     {
         while ((it = get_next_list_element(it, &keys->root, &elem)))
         {
-            empty_flag = false;
             if (IS_A_AGTYPE_SCALAR(&elem))
             {
-                str = get_string_from_agtype_value(&elem, &(&elem)->val.string.len);
-
                 if (!find_agtype_value_from_container(&agt->root,
                                                       AGT_FOBJECT | AGT_FARRAY,
-                                                      string_to_agtype_value(str)))
+                                                      &elem))
                 {
                     PG_RETURN_BOOL(false);
                 }
             }
             else
             {
-                ereport(ERROR,
-                        (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                        errmsg("invalid agtype value for key")));
+                PG_RETURN_BOOL(false);
             }
         }
     }
@@ -1121,10 +1109,6 @@ Datum agtype_exists_all_agtype(PG_FUNCTION_ARGS)
                  errmsg("invalid agtype value for right operand")));
     }
 
-    if (empty_flag)
-    {
-        PG_RETURN_BOOL(false);
-    }
 
     PG_RETURN_BOOL(true);
 }
