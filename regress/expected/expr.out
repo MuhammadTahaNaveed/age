@@ -1246,8 +1246,6 @@ SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& 'list' $$) as (a 
 ERROR:  invalid agtype value for right operand
 SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& n $$) as (a agtype);
 ERROR:  invalid agtype value for right operand
-SELECT * FROM cypher('jsonb_operators',$$MATCH (n) return n ?& [['list']] $$) as (a agtype);
-ERROR:  invalid agtype value for key
 -- concat ||
 SELECT * FROM cypher('jsonb_operators', $$ RETURN [1,2] || 2 $$) AS (result agtype);
   result   
@@ -1349,6 +1347,8 @@ SELECT * FROM cypher('jsonb_operators', $$ MATCH (n) RETURN n.json || n $$) AS (
                                                                                          result                                                                                          
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  [{"a": 1, "b": ["a", "b"], "c": {"d": "a"}}, {"id": 281474976710657, "label": "", "properties": {"json": {"a": 1, "b": ["a", "b"], "c": {"d": "a"}}, "list": ["a", "b", "c"]}}::vertex]
+(1 row)
+
 /*
  * access operator ->
  */

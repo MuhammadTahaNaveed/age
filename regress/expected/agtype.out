@@ -3651,28 +3651,10 @@ SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? '{"n":
 SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? '["e1"]';
  ?column? 
 ----------
- t
+ f
 (1 row)
 
-SELECT '{"a":null, "b":"qq"}'::agtype ?| '["c","a"]';
- ?column? 
-----------
- t
-(1 row)
-
-SELECT '{"1":null, "b":"qq"}'::agtype ?| '["c","1"]';
- ?column? 
-----------
- t
-(1 row)
-
-SELECT '{"a":null, "b":"qq"}'::agtype ?| '["a","a", "b", "b", "b"]'::agtype;
- ?column? 
-----------
- t
-(1 row)
-
---errors out
+-- errors out
 SELECT '{"n":null,"a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? 'e1';
 ERROR:  invalid input syntax for type agtype
 LINE 1: ...a":1,"b":[1,2],"c":{"1":2},"d":{"1":[2,3]}}'::agtype ? 'e1';
@@ -3847,6 +3829,24 @@ SELECT '{"a":null, "b":"qq"}'::agtype ?& '["c","d"]'::agtype;
 (1 row)
 
 SELECT '{"a":null, "b":"qq"}'::agtype ?& '[]';
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '[["a"]]';
+ ?column? 
+----------
+ f
+(1 row)
+
+SELECT agtype_exists_all('{"id": 1}', array['not_id']);
+ agtype_exists_all 
+-------------------
+ f
+(1 row)
+
+SELECT '{"id": 1}'::agtype ?& array['not_id'];
  ?column? 
 ----------
  f
@@ -4277,7 +4277,6 @@ ERROR:  operator does not exist: agtype || boolean
 LINE 1: SELECT '3'::agtype || true;
                            ^
 HINT:  No operator matches the given name and argument types. You might need to add explicit type casts.
-
 --
 -- Test STARTS WITH, ENDS WITH, and CONTAINS
 --

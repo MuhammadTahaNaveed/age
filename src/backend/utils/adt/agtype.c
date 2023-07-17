@@ -3586,59 +3586,6 @@ agtype_value *extract_entity_properties(agtype *object, bool error_on_scalar)
     return return_value;
 }
 
-/*
- * Returns properties
- */
-agtype_value *extract_entity_properties(agtype *object, bool error_on_scalar)
-{
-    agtype_value *scalar_value = NULL;
-    agtype_value *return_value = NULL;
-
-    if (!AGT_ROOT_IS_SCALAR(object))
-    {
-        ereport(ERROR,(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                       errmsg("expected a scalar value")));
-    }
-
-    /* unpack the scalar */
-    scalar_value = get_ith_agtype_value_from_container(&object->root, 0);
-
-    /* get the properties depending on the type or fail */
-    if (scalar_value->type == AGTV_VERTEX)
-    {
-        return_value = &scalar_value->val.object.pairs[2].value;
-    }
-    else if (scalar_value->type == AGTV_EDGE)
-    {
-        return_value = &scalar_value->val.object.pairs[4].value;
-    }
-    else if (scalar_value->type == AGTV_PATH)
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("cannot extract properties from an agtype path")));
-    }
-    else if (error_on_scalar)
-    {
-        ereport(ERROR,
-                (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-                 errmsg("scalar object must be a vertex or edge")));
-    }
-    else
-    {
-        return_value = scalar_value;
-    }
-
-    /* if the properties are NULL, return NULL */
-    if (return_value == NULL || return_value->type == AGTV_NULL)
-    {
-        return NULL;
-    }
-
-    /* set the object_value to the property_value. */
-    return return_value;
-}
-
 PG_FUNCTION_INFO_V1(agtype_access_operator);
 /*
  * Execution function for object.property, object["property"],
