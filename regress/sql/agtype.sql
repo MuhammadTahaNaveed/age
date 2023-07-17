@@ -1033,6 +1033,9 @@ SELECT '{"id": 1}'::agtype ?& array['not_id'];
 -- errors out
 SELECT '{"a":null, "b":"qq"}'::agtype ?& '"d"';
 SELECT '{"a":null, "b":"qq"}'::agtype ?& '"a"';
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '" "';
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '""';
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '"null"';
 
 --Concat ||
 SELECT i, pg_typeof(i) FROM (SELECT '[0, 1]'::agtype || '[0, 1]'::agtype as i) a;

@@ -3857,6 +3857,12 @@ SELECT '{"a":null, "b":"qq"}'::agtype ?& '"d"';
 ERROR:  invalid agtype value for right operand
 SELECT '{"a":null, "b":"qq"}'::agtype ?& '"a"';
 ERROR:  invalid agtype value for right operand
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '" "';
+ERROR:  invalid agtype value for right operand
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '""';
+ERROR:  invalid agtype value for right operand
+SELECT '{"a":null, "b":"qq"}'::agtype ?& '"null"';
+ERROR:  invalid agtype value for right operand
 --Concat ||
 SELECT i, pg_typeof(i) FROM (SELECT '[0, 1]'::agtype || '[0, 1]'::agtype as i) a;
       i       | pg_typeof 
