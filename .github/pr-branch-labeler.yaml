@@ -1,0 +1,3 @@
+# Apply label "PG12" if head matches one of "PG12/*"
+PG12:
+  base: "PG12/*"
