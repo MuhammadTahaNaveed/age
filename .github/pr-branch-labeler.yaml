@@ -1,3 +1,3 @@
 # Apply label "PG15" if head matches one of "PG15/*"
 PG15:
-  base: "PG15/*"
+  base: "PG15"
