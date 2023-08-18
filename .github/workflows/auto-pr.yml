@@ -35,6 +35,11 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits")
           echo "$PR_INFO" > pr_info.json
           echo "$COMMITS_INFO" > commits_info.json
+
+      - uses: actions/checkout@v3
+        with:
+          ref: master
+
       - name: Display Pull Request and Commits Info
         run: |
           commits=$(jq -c '.[]' commits_info.json)
@@ -52,16 +57,11 @@ jobs:
             echo "Message: $commit_message"
 
             # Generate patch and store in a file
-            echo "sha=$sha" > $GITHUB_ENV
+            git checkout -B temp_branch $sha
+            git format-patch -1 temp_branch
+            git checkout -
+            git branch -D temp_branch
           done <<< "$commits"
-      - uses: actions/checkout@v3
-        with:
-          ref: master
-
-      - name: hmmm
-        run: git format-patch -1 $sha
-
-
       # - name: Read patch url and set as environment variable
       #   env:
       #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
