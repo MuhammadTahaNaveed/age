@@ -174,7 +174,10 @@ If the path to your Postgres installation is not in the PATH variable, add the p
 ```bash
 make PG_CONFIG=/path/to/postgres/bin/pg_config install
 ```
-
+Run the regression tests using the following command:
+```bash
+make PG_CONFIG=/path/to/postgres/bin/pg_config installcheck
+```
 
 <h4></a><img width="30" src="/img/docker.svg"></a>
 &nbsp;Run using Docker
