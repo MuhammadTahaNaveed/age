@@ -25,10 +25,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: master
-
       - name: Get Pull Request and Commits Info
         id: pr_info
         run: |
@@ -39,7 +35,6 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits")
           echo "$PR_INFO" > pr_info.json
           echo "$COMMITS_INFO" > commits_info.json
-
       - name: Display Pull Request and Commits Info
         run: |
           commits=$(jq -c '.[]' commits_info.json)
@@ -57,8 +52,16 @@ jobs:
             echo "Message: $commit_message"
 
             # Generate patch and store in a file
-            echo "$sha"
+            echo "sha=$sha" > $GITHUB_ENV
           done <<< "$commits"
+      - uses: actions/checkout@v3
+        with:
+          ref: master
+
+      - name: hmmm
+        run: git format-patch -1 $sha
+
+
       # - name: Read patch url and set as environment variable
       #   env:
       #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
