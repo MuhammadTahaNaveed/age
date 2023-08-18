@@ -73,10 +73,10 @@ jobs:
       #     git config --global user.name "Your Name"
       #     curl -L "https://github.com/MuhammadTahaNaveed/age/pull/85.patch" | git apply -v
 
-      # - name: Create Pull Request
-      #   uses: peter-evans/create-pull-request@v5
-      #   with:
-      #     branch: apply-pr-master     #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          branch: apply-pr-master     #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
 
       #    "patch_url": "https://github.com/MuhammadTahaNaveed/age/pull/79.patch",
 # # Download a patch and apply it.
