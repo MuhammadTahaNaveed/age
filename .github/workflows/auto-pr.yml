@@ -84,28 +84,12 @@ jobs:
         with:
           branch: apply-pr-master-${{ matrix.branch }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
 
-      #    "patch_url": "https://github.com/MuhammadTahaNaveed/age/pull/79.patch",
-# # Download a patch and apply it.
-# curl $URL | git apply -v --index
-# # Commit patch and add a log message.
-# git commit -m "Applied $URL."
+# TODO: Following needs to be done
 
-          # git add .
-          # git commit -m 'Applied PR [This will be original commit message.]'
-
-
-
-      # - name: Read patch url and set as environment variable
-      #   env:
-      #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
-      #   run: |
-      #     echo "$PATCH_URL"
-
-      # - uses: actions/checkout@v3
-      #   with:
-      #     ref: master
-      # - name: Create commit using patch for master branch
-      #   run: |
-      #     git config --global user.email "you@example.com"
-      #     git config --global user.name "Your Name"
-      #     curl -L "https://github.com/MuhammadTahaNaveed/age/pull/85.patch" | git apply -v
+#     PR title
+#     PR body
+#     reviewers
+#     labels
+#     currently its creating against master, should be against all PG** branches.
+#     need to check what happens if commit has an extended description
+#     head branch name as well
