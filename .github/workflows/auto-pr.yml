@@ -25,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: master
       - name: Get Pull Request and Commits Info
         id: pr_info
         run: |
@@ -35,10 +38,6 @@ jobs:
             "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits")
           echo "$PR_INFO" > pr_info.json
           echo "$COMMITS_INFO" > commits_info.json
-
-      - uses: actions/checkout@v3
-        with:
-          ref: master
 
       - name: Display Pull Request and Commits Info
         run: |
