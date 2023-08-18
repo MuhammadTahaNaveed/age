@@ -1,0 +1,32 @@
+name: Create production promotion pull request
+on:
+  issue_comment:                                     
+    types: [created, edited, deleted]
+
+jobs:
+  TriggerOnComment:
+    if: ${{ github.event.issue.pull_request }}    # check if the comments come from pull request, exclude those from issue.
+    runs-on: ubunto-latest
+
+    steps:
+      - name: say hello
+        if: contains(github.event.comment.body, '/sync')   # check the comment if it contains the keywords
+        run: |
+        echo started automating PRs
+
+  # productionPromotion:
+  #   needs: TriggerOnComment
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #       with:
+  #         ref: PG15
+  #     - name: Reset promotion branch
+  #       run: |
+  #         git fetch origin auto-sync-pr
+  #         git reset --hard origin/auto-sync-pr
+  #     - name: Create Pull Request
+  #       uses: peter-evans/create-pull-request@v5
+  #       with:
+  #         branch: apply-pr
