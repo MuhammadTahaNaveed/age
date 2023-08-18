@@ -56,10 +56,7 @@ jobs:
             echo "Message: $commit_message"
 
             # Generate patch and store in a file
-            git checkout -B temp_branch $sha
-            git format-patch -1 temp_branch
-            git checkout -
-            git branch -D temp_branch
+            curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
           done <<< "$commits"
       # - name: Read patch url and set as environment variable
       #   env:
