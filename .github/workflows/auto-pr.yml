@@ -60,16 +60,13 @@ jobs:
 
             # apply this patch to master branch
             git apply -v "$sha.patch"
-            git add .
-            git commit -m "$commit_message" --author="$commit_author"
 
             # Delete patch file
             rm "$sha.patch"
-          done <<< "$commits"
 
-          # delete json files
-          rm pr_info.json
-          rm commits_info.json
+            git add $(git ls-files -o --exclude={pr_info.json,commits_info.json})
+            git commit -m "$commit_message" --author="$commit_author"
+          done <<< "$commits"
       # - name: Read patch url and set as environment variable
       #   env:
       #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
