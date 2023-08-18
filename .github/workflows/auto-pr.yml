@@ -49,15 +49,27 @@ jobs:
             committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
             committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
             commit_message=$(echo "$commit" | jq -r '.commit.message')
+            commit_author="$author_name <$author_email>"
 
-            # Use the retrieved values as needed, e.g., set environment variables
-            echo "Commit by: $author_name <$author_email>"
-            echo "Committer: $committer_name <$committer_email>"
-            echo "Message: $commit_message"
+            # Add committer info
+            git config --global user.email "$committer_email"
+            git config --global user.name "$committer_name"
 
             # Generate patch and store in a file
             curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
+
+            # apply this patch to master branch
+            git apply -v "$sha.patch"
+            git add .
+            git commit -m "$commit_message" --author="$commit_author"
+
+            # Delete patch file
+            rm "$sha.patch"
           done <<< "$commits"
+
+          # delete json files
+          rm pr_info.json
+          rm commits_info.json
       # - name: Read patch url and set as environment variable
       #   env:
       #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
