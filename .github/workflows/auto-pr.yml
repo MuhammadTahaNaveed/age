@@ -13,7 +13,7 @@ jobs:
         id: trigger
         if: |                                                   # check the keyword and authors(TODO: use actor id for author verification)
           contains('["/sync"]', github.event.comment.body) &&
-          contains('["MuhammadTahaNaveed"]', github.actor)
+          contains('["MuhammadTahaNaveed", "ha-ha-ha-haa"]', github.actor)
         run: echo "Author and keyword verified.... Triggering event"
         
       - name: Exit the job if keyword and author unverified
