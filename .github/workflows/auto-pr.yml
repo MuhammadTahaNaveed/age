@@ -64,7 +64,7 @@ jobs:
         run: |
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
-          curl -L "https://github.com/MuhammadTahaNaveed/age/pull/80.patch" | git apply -v
+          curl -L "https://github.com/MuhammadTahaNaveed/age/pull/85.patch" | git apply -v
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
