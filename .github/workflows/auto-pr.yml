@@ -25,51 +25,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # - name: Get Pull Request and Commits Info
-      #   id: pr_info
-      #   run: |
-      #     PR_NUMBER=$(echo "${{ github.event.issue.url }}" | awk -F'/' '{print $NF}')
-      #     PR_INFO=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-      #       "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}")
-      #     COMMITS_INFO=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-      #       "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits")
-      #     echo "$PR_INFO" > pr_info.json
-      #     echo "$COMMITS_INFO" > commits_info.json
-
-      # - name: Display Pull Request and Commits Info
-      #   run: |
-      #     commits=$(jq -c '.[]' commits_info.json)
-      #     while IFS= read -r commit; do
-      #       author_name=$(echo "$commit" | jq -r '.commit.author.name')
-      #       author_email=$(echo "$commit" | jq -r '.commit.author.email')
-      #       committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
-      #       committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
-      #       commit_message=$(echo "$commit" | jq -r '.commit.message')
-
-      #       # Use the retrieved values as needed, e.g., set environment variables
-      #       echo "Commit by: $author_name <$author_email>"
-      #       echo "Committer: $committer_name <$committer_email>"
-      #       echo "Message: $commit_message"
-      #     done <<< "$commits"
-      - name: Read patch url and set as environment variable
-        env:
-          PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
+      - name: Get Pull Request and Commits Info
+        id: pr_info
         run: |
-          echo "$PATCH_URL"
+          PR_NUMBER=$(echo "${{ github.event.issue.url }}" | awk -F'/' '{print $NF}')
+          PR_INFO=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+          COMMITS_INFO=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}/commits")
+          echo "$PR_INFO" > pr_info.json
+          echo "$COMMITS_INFO" > commits_info.json
 
-      - uses: actions/checkout@v3
-        with:
-          ref: master
-      - name: Create commit using patch for master branch
+      - name: Display Pull Request and Commits Info
         run: |
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
-          curl -L "https://github.com/MuhammadTahaNaveed/age/pull/85.patch" | git apply -v
+          commits=$(jq -c '.[]' commits_info.json)
+          while IFS= read -r commit; do
+            sha=$(echo "$commit" | jq -r '.sha')
+            author_name=$(echo "$commit" | jq -r '.commit.author.name')
+            author_email=$(echo "$commit" | jq -r '.commit.author.email')
+            committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
+            committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
+            commit_message=$(echo "$commit" | jq -r '.commit.message')
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          branch: apply-pr-master     #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+            # Use the retrieved values as needed, e.g., set environment variables
+            echo "Commit by: $author_name <$author_email>"
+            echo "Committer: $committer_name <$committer_email>"
+            echo "Message: $commit_message"
+
+            # Generate patch and store in a file
+            git format-patch $sha
+          done <<< "$commits"
+      # - name: Read patch url and set as environment variable
+      #   env:
+      #     PATCH_URL: ${{ github.event.issue.pull_request.patch_url }}
+      #   run: |
+      #     echo "$PATCH_URL"
+
+      # - uses: actions/checkout@v3
+      #   with:
+      #     ref: master
+      # - name: Create commit using patch for master branch
+      #   run: |
+      #     git config --global user.email "you@example.com"
+      #     git config --global user.name "Your Name"
+      #     curl -L "https://github.com/MuhammadTahaNaveed/age/pull/85.patch" | git apply -v
+
+      # - name: Create Pull Request
+      #   uses: peter-evans/create-pull-request@v5
+      #   with:
+      #     branch: apply-pr-master     #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
 
       #    "patch_url": "https://github.com/MuhammadTahaNaveed/age/pull/79.patch",
 # # Download a patch and apply it.
