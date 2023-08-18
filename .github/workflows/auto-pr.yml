@@ -57,7 +57,7 @@ jobs:
             echo "Message: $commit_message"
 
             # Generate patch and store in a file
-            git format-patch -1 "$sha"
+            echo "$sha"
           done <<< "$commits"
       # - name: Read patch url and set as environment variable
       #   env:
