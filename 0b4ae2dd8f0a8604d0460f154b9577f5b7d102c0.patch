@@ -1,0 +1,22 @@
+From 0b4ae2dd8f0a8604d0460f154b9577f5b7d102c0 Mon Sep 17 00:00:00 2001
+From: ha-ha-ha-haa <119752825+ha-ha-ha-haa@users.noreply.github.com>
+Date: Fri, 18 Aug 2023 17:57:58 +0500
+Subject: [PATCH] Update README.md (#84)
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index d5a63d423..35364b8ba 100644
+--- a/README.md
++++ b/README.md
+@@ -69,7 +69,7 @@
+ 
+ </br>
+ 
+-Since AGE is based on the powerful PostgreSQL RDBMS, it is robust and fully featured. AGE is optimized for handling complex connected graph data. It provides plenty of robust database features essential to the database environment, including ACID transactions, multi-version concurrency control (MVCC), stored procedure, triggers, constraints, sophisticated monitoring, and a flexible data model (JSON). Users with a relational database background who require graph data analytics can use this extension with minimal effort because they can use existing data without going through migration. 
++Since AGE is based on the powerful PostgreSQL RDBMS, it is robust and fully featured. AGE is optimized for handling complex connected graph data. It provides plenty of robust database features essential to the database environment, including ACID transactions, multi-version concurrency control (MVCC), stored procedure, triggers, constraints, sophisticated monitoring, and a flexible data model (JSON). Users with a relational database background who require graph data analytics can use this extension with minimal effort because they can use existing data without going through migratio
+ 
+ There is a strong need for cohesive, easy-to-implement multi-model databases. As an extension of PostgreSQL, AGE supports all the functionalities and features of PostgreSQL while also offering a graph model to boot
+ 
