@@ -36,6 +36,10 @@ jobs:
           echo "$PR_INFO" > pr_info.json
           echo "$COMMITS_INFO" > commits_info.json
 
+      - uses: actions/checkout@v3
+        with:
+          ref: master
+
       - name: Display Pull Request and Commits Info
         run: |
           commits=$(jq -c '.[]' commits_info.json)
