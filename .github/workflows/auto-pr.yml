@@ -87,6 +87,12 @@ jobs:
           branch: auto-sync-${{ env.PR_HEAD_BRANCH }}-${{ matrix.branch }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
           title: ${{ env.PR_TITLE }}
           body: ${{ env.PR_BODY }}
+          labels: |
+            ${{ matrix.branch }}
+            automated pr
+          reviewers: |
+            MuhammadTahaNaveed
+          delete-branch: true
 
 # TODO: Following needs to be done
 
