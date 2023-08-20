@@ -14,19 +14,19 @@ jobs:
         run: |
         echo started automating PRs
 
-  productionPromotion:
-    needs: TriggerOnComment
-    runs-on: ubuntu-latest
+  # productionPromotion:
+  #   needs: TriggerOnComment
+  #   runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: PG15
-      - name: Reset promotion branch
-        run: |
-          git fetch origin auto-sync-pr
-          git reset --hard origin/auto-sync-pr
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          branch: apply-pr
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #       with:
+  #         ref: PG15
+  #     - name: Reset promotion branch
+  #       run: |
+  #         git fetch origin auto-sync-pr
+  #         git reset --hard origin/auto-sync-pr
+  #     - name: Create Pull Request
+  #       uses: peter-evans/create-pull-request@v5
+  #       with:
+  #         branch: apply-pr
