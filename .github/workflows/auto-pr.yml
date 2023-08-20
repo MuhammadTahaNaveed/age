@@ -9,11 +9,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: master
+          ref: auto-sync-pr
       - name: Reset master branch
         run: |
-          git fetch origin master
-          git reset --hard master
+          git fetch origin auto-sync-pr
+          git reset --hard auto-sync-pr
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
