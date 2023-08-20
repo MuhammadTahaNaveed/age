@@ -9,12 +9,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: auto-sync-pr
-      - name: Reset master branch
+          ref: PG15
+      - name: Reset promotion branch
         run: |
           git fetch origin auto-sync-pr
           git reset --hard auto-sync-pr
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          branch: auto-pr-check
+          branch: apply-pr
