@@ -26,7 +26,7 @@ jobs:
 
     strategy:
       matrix:
-        branch: ['PG11', 'PG12', 'PG13']
+        branch: ['PG11', 'PG12', 'PG13', 'PG14', 'PG15']
 
     steps:
       - uses: actions/checkout@v3
@@ -45,7 +45,12 @@ jobs:
           echo 'pr_info.json' >> .git/info/exclude
           echo 'commits_info.json' >> .git/info/exclude
           echo "PR_TITLE=$(jq -r .title pr_info.json)" >> $GITHUB_ENV
-          echo "PR_BODY=$(jq -r .body pr_info.json)" >> $GITHUB_ENV
+          pr_body=$(jq -r .body pr_info.json)
+          if [ "$pr_body" == "null" ]; then
+            echo "PR_BODY=''" >> $GITHUB_ENV
+          else
+            echo "PR_BODY=$body" >> $GITHUB_ENV
+          fi
           echo "PR_HEAD_BRANCH=$(jq -r .head.ref pr_info.json)" >> $GITHUB_ENV
 
       - name: Apply patch to ${{ matrix.branch }} branch
@@ -93,13 +98,3 @@ jobs:
           reviewers: |
             MuhammadTahaNaveed
           delete-branch: true
-
-# TODO: Following needs to be done
-
-#     PR title
-#     PR body
-#     reviewers
-#     labels
-#     currently its creating against master, should be against all PG** branches. => ok
-#     need to check what happens if commit has an extended description => ok snzz
-#     head branch name as well
