@@ -47,7 +47,7 @@ jobs:
           echo "PR_TITLE=$(jq -r .title pr_info.json)" >> $GITHUB_ENV
           pr_body=$(jq -r .body pr_info.json)
           if [ "$pr_body" == "null" ]; then
-            echo "PR_BODY=''" >> $GITHUB_ENV
+            echo "PR_BODY=" >> $GITHUB_ENV
           else
             echo "PR_BODY=$body" >> $GITHUB_ENV
           fi
