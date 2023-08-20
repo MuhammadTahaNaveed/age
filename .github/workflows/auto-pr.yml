@@ -26,7 +26,7 @@ jobs:
 
     strategy:
       matrix:
-        branch: ['PG11', 'PG12', 'PG13']
+        branch: ['PG11', 'PG12', 'PG13', 'PG14', 'PG15']
 
     steps:
       - uses: actions/checkout@v3
@@ -44,9 +44,11 @@ jobs:
           echo "$COMMITS_INFO" > commits_info.json
           echo 'pr_info.json' >> .git/info/exclude
           echo 'commits_info.json' >> .git/info/exclude
+          echo "PR_TITLE=$(jq -r .title pr_info.json)" >> $GITHUB_ENV
+          echo "PR_BODY=$(jq -r .body pr_info.json)" >> $GITHUB_ENV
+          echo "PR_HEAD_BRANCH=$(jq -r .head.ref pr_info.json)" >> $GITHUB_ENV
 
-
-      - name: Display Pull Request and Commits Info
+      - name: Apply patch to ${{ matrix.branch }} branch
         run: |
           commits=$(jq -c '.[]' commits_info.json)
           while IFS= read -r commit; do
@@ -82,7 +84,9 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          branch: apply-pr-master-${{ matrix.branch }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+          branch: '[auto-sync]-${{ PR_HEAD_BRANCH }}-${{ matrix.branch }}'  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+          title: ${{ PR_TITLE }}
+          body: ${{ PR_BODY }}
 
 # TODO: Following needs to be done
 
@@ -90,6 +94,6 @@ jobs:
 #     PR body
 #     reviewers
 #     labels
-#     currently its creating against master, should be against all PG** branches.
-#     need to check what happens if commit has an extended description
+#     currently its creating against master, should be against all PG** branches. => ok
+#     need to check what happens if commit has an extended description => ok snzz
 #     head branch name as well
