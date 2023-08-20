@@ -84,9 +84,9 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          branch: '[auto-sync]-$PR_HEAD_BRANCH-${{ matrix.branch }}'  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
-          title: $PR_TITLE
-          body: $PR_BODY
+          branch: '[auto-sync]-${{ env.PR_BRANCH_NAME }}-${{ matrix.branch }}'  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+          title: ${{ env.PR_TITLE }}
+          body: ${{ env.PR_BODY }}
 
 # TODO: Following needs to be done
 
