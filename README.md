@@ -69,7 +69,7 @@
 
 </br>
 
-Since AGE is based on the powerful PostgreSQL RDBMS, it is robust and fully featured. AGE is optimized for handling complex connected graph data. It provides plenty of robust database features essential to the database environment, including ACID transactions, multi-version concurrency control (MVCC), stored procedure, triggers, constraints, sophisticated monitoring, and a flexible data model (JSON). Users with a relational database background who require graph data analytics can use this extension with minimal effort because they can use existing data without going through migration. 
+Since AGE is based on the powerful PostgreSQL RDBMS, it is robust and fully featured. AGE is optimized for handling complex connected graph data. It provides plenty of robust database features essential to the database environment, including ACID transactions, multi-version concurrency control (MVCC), stored procedure, triggers, constraints, sophisticated monitoring, and a flexible data model (JSON). Users with a relational database background who require graph data analytics can use this extension with minimal effort because they can use existing data without going through migratio
 
 There is a strong need for cohesive, easy-to-implement multi-model databases. As an extension of PostgreSQL, AGE supports all the functionalities and features of PostgreSQL while also offering a graph model to boot
 
@@ -174,7 +174,10 @@ If the path to your Postgres installation is not in the PATH variable, add the p
 ```bash
 make PG_CONFIG=/path/to/postgres/bin/pg_config install
 ```
-
+Run the regression tests using the following command:
+```bash
+make PG_CONFIG=/path/to/postgres/bin/pg_config installcheck
+```
 
 <h4></a><img width="30" src="/img/docker.svg"></a>
 &nbsp;Run using Docker
