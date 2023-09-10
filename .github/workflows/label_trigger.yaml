@@ -18,65 +18,67 @@ jobs:
           pr_info=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request._links.self.href }}" | jq -c '.[]')
           
-          label="${{ github.event.label.name }}"
-          branch_name="${label#auto-create-}"
-          pr_number="${{ github.event.number }}"
-          pr_title=$(echo "$pr_info" | jq -r '.title')
-          pr_body=$(echo "$pr_info" | jq -r '.body')
+          echo "$pr_info"
+          
+      #     label="${{ github.event.label.name }}"
+      #     branch_name="${label#auto-create-}"
+      #     pr_number="${{ github.event.number }}"
+      #     pr_title=$(echo "$pr_info" | jq -r '.title')
+      #     pr_body=$(echo "$pr_info" | jq -r '.body')
 
-          echo "BASE=$branch_name" >> $GITHUB_ENV
-          echo "PR_NUMBER=$pr_number" >> $GITHUB_ENV
-          echo "PR_TITLE=$pr_title" >> $GITHUB_ENV
-          echo "PR_BODY=$pr_body" >> $GITHUB_ENV
+      #     echo "BASE=$branch_name" >> $GITHUB_ENV
+      #     echo "PR_NUMBER=$pr_number" >> $GITHUB_ENV
+      #     echo "PR_TITLE=$pr_title" >> $GITHUB_ENV
+      #     echo "PR_BODY=$pr_body" >> $GITHUB_ENV
 
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{ env.BASE }}
+      # - uses: actions/checkout@v3
+      #   with:
+      #     ref: ${{ env.BASE }}
 
-      - name: Extract and apply commits
-        run: |
-          commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request._links.commits.href }}" | jq -c '.[]')
+      # - name: Extract and apply commits
+      #   run: |
+      #     commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+      #       "${{ github.event.pull_request._links.commits.href }}" | jq -c '.[]')
 
-          while IFS= read -r commit; do
-            sha=$(echo "$commit" | jq -r '.sha')
-            author_name=$(echo "$commit" | jq -r '.commit.author.name')
-            author_email=$(echo "$commit" | jq -r '.commit.author.email')
-            committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
-            committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
-            commit_message=$(echo "$commit" | jq -r '.commit.message')
-            commit_author="$author_name <$author_email>"
+      #     while IFS= read -r commit; do
+      #       sha=$(echo "$commit" | jq -r '.sha')
+      #       author_name=$(echo "$commit" | jq -r '.commit.author.name')
+      #       author_email=$(echo "$commit" | jq -r '.commit.author.email')
+      #       committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
+      #       committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
+      #       commit_message=$(echo "$commit" | jq -r '.commit.message')
+      #       commit_author="$author_name <$author_email>"
 
-            # Add committer info
-            git config --global user.email "$committer_email"
-            git config --global user.name "$committer_name"
+      #       # Add committer info
+      #       git config --global user.email "$committer_email"
+      #       git config --global user.name "$committer_name"
 
-            echo "Applying commit: $sha"
+      #       echo "Applying commit: $sha"
 
-            # Generate patch and store in a file
-            echo "https://github.com/${{ github.repository }}/commit/$sha.patch"
-            curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
+      #       # Generate patch and store in a file
+      #       echo "https://github.com/${{ github.repository }}/commit/$sha.patch"
+      #       curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
 
-            # apply this patch to master branch
-            git apply -v "$sha.patch"
+      #       # apply this patch to master branch
+      #       git apply -v "$sha.patch"
 
-            # Delete patch file
-            rm "$sha.patch"
+      #       # Delete patch file
+      #       rm "$sha.patch"
 
-            git add .
-            git commit -m "$commit_message" --author="$commit_author"
-          done <<< "$commits"
-          git log
+      #       git add .
+      #       git commit -m "$commit_message" --author="$commit_author"
+      #     done <<< "$commits"
+      #     git log
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          branch: auto-sync-${{ env.BASE }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
-          title: ${{ env.PR_TITLE }}
-          body: ${{ env.PR_BODY }}
-          labels: |
-            ${{ env.BASE }}
-            automated pr
-          reviewers: |
-            MuhammadTahaNaveed
-          delete-branch: true
+      # - name: Create Pull Request
+      #   uses: peter-evans/create-pull-request@v5
+      #   with:
+      #     branch: auto-sync-${{ env.BASE }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+      #     title: ${{ env.PR_TITLE }}
+      #     body: ${{ env.PR_BODY }}
+      #     labels: |
+      #       ${{ env.BASE }}
+      #       automated pr
+      #     reviewers: |
+      #       MuhammadTahaNaveed
+      #     delete-branch: true
