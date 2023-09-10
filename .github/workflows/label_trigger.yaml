@@ -1,4 +1,4 @@
-name: lets see
+name: Check and Print Labels
 
 on:
   pull_request:
@@ -7,8 +7,14 @@ on:
 jobs:
   tweet:
     if: >-
-        contains(github.event.pull_request.labels.*.name, 'PG11')
+        contains(github.event.pull_request.labels.*.name, 'auto-create') &&
+        (github.event.pull_request.user.login == 'Taha' || github.event.pull_request.user.login == 'john')
     runs-on: ubuntu-latest
     steps:
-      - name: print something
-        run: echo "hello world"
+      - name: Print Labels
+        run: |
+          for label in ${{ github.event.pull_request.labels.*.name }}; do
+            if [[ $label == *"auto-create"* ]]; then
+              echo "Label: $label"
+            fi
+          done
