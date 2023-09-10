@@ -7,8 +7,10 @@ on:
 jobs:
   tweet:
     if: >-
+      (
         contains(github.event.pull_request.user.login, 'MuhammadTahaNaveed', 'john') &&
         contains(join(github.event.pull_request.labels.*.name, ' '), 'auto-create')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Print Labels
