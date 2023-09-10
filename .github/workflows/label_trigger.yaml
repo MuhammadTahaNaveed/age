@@ -16,7 +16,7 @@ jobs:
       - name: Extract PR info
         run: |
           pr_info=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request._links.self.href }}" | jq -c '.[]')
+            "${{ github.event.pull_request._links.self.href }}")
           
           echo "$pr_info"
           
