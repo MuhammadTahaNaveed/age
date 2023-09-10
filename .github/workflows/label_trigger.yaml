@@ -15,17 +15,16 @@ jobs:
     steps:
       - name: Print GitHub Event
         run: |
-          echo "${{ toJson(github.event) }}"
+          label="${{ github.event.label.name }}"
+          branch_name="${label#auto-create-}"
+          echo "BASE=$branch_name" >> $GITHUB_ENV
 
       - uses: actions/checkout@v3
         with:
-          ref: PG11
+          ref: ${{ env.BASE }}
 
       - name: Print branch
         run: |
-          label="${{ github.event.label.name }}"
-          branch_name="${label#auto-create-}"
-
           commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request._links.commits.href }}" | jq -c '.[]')
 
