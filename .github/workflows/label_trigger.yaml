@@ -1,4 +1,4 @@
-name: Check and Print Labels
+name: lets see
 
 on:
   pull_request:
@@ -10,10 +10,5 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'auto-create')
     runs-on: ubuntu-latest
     steps:
-      - name: Print Labels
-        run: |
-          for label in ${{ github.event.pull_request.labels.*.name }}; do
-            if [[ $label == *"auto-create"* ]]; then
-              echo "Label: $label"
-            fi
-          done
+      - name: print something
+        run: echo "hello world"
