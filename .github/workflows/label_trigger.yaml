@@ -9,11 +9,15 @@ jobs:
     if: >-
       (
         contains('["MuhammadTahaNaveed", "ha-ha-ha-haa"]', github.actor) &&
-        contains(join(github.event.pull_request.labels.*.name, ' '), 'auto-create')
+        contains(github.event.label.name, 'auto-create')
       )
     runs-on: ubuntu-latest
     steps:
       - name: Print GitHub Event
         run: |
           echo "${{ toJson(github.event) }}"
+
+      - name: Print branch
+        run: |
+          echo "${{ github.event.label.name | replace('auto-create-', '') }}"
 
