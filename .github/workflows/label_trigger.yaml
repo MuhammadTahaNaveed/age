@@ -21,4 +21,23 @@ jobs:
         run: |
           label="${{ github.event.label.name }}"
           branch_name="${label#auto-create-}"
-          echo "Text after 'auto-create-': $branch_name"
+
+          commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.event.pull_request.commits.href }}")
+
+          while IFS= read -r commit; do
+            echo $commit
+          done <<< "$commits"
+
+      # - name: Create Pull Request
+      #   uses: peter-evans/create-pull-request@v5
+      #   with:
+      #     branch: auto-sync-${{ env.PR_HEAD_BRANCH }}-${{ matrix.branch }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
+      #     title: ${{ env.PR_TITLE }}
+      #     body: ${{ env.PR_BODY }}
+      #     labels: |
+      #       ${{ matrix.branch }}
+      #       automated pr
+      #     reviewers: |
+      #       MuhammadTahaNaveed
+      #     delete-branch: true
