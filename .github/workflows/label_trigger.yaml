@@ -17,6 +17,10 @@ jobs:
         run: |
           echo "${{ toJson(github.event) }}"
 
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ matrix.branch }}
+
       - name: Print branch
         run: |
           label="${{ github.event.label.name }}"
@@ -42,6 +46,7 @@ jobs:
 
             # Generate patch and store in a file
             echo "https://github.com/${{ github.repository }}/commit/$sha.patch"
+            curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
 
             # apply this patch to master branch
             git apply -v "$sha.patch"
