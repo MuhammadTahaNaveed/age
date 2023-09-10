@@ -23,11 +23,13 @@ jobs:
           pr_number="${{ github.event.number }}"
           pr_title=$(echo "$pr_info" | jq -r '.title')
           pr_body=$(echo "$pr_info" | jq -r '.body')
+          pr_author=$(echo "$pr_info" | jq -r '.user.login')
 
           echo "BASE=$branch_name" >> $GITHUB_ENV
           echo "PR_NUMBER=$pr_number" >> $GITHUB_ENV
           echo "PR_TITLE=$pr_title" >> $GITHUB_ENV
           echo "PR_BODY=$pr_body" >> $GITHUB_ENV
+          echo "PR_AUTHOR=$pr_author" >> $GITHUB_ENV
 
       - uses: actions/checkout@v3
         with:
@@ -73,7 +75,7 @@ jobs:
         with:
           branch: automated/${{ env.BASE }}/${{ env.PR_NUMBER }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
           title: ${{ env.PR_TITLE }}
-          body: "${{ env.PR_BODY }} \n\n This PR is created by github bot. Original PR: #${{ env.PR_NUMBER }}"
+          body: "${{ env.PR_BODY }} \n\n This PR is created by github bot. Original PR: #${{ env.PR_NUMBER }} \n ${{Authored by: @env.PR_AUTHOR}}"
           labels: |
             ${{ env.BASE }}
             automated pr
