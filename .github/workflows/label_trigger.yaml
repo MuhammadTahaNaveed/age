@@ -26,8 +26,31 @@ jobs:
             "${{ github.event.pull_request._links.commits.href }}" | jq -c '.[]')
 
           while IFS= read -r commit; do
-            echo $commit
+            sha=$(echo "$commit" | jq -r '.sha')
+            author_name=$(echo "$commit" | jq -r '.commit.author.name')
+            author_email=$(echo "$commit" | jq -r '.commit.author.email')
+            committer_name=$(echo "$commit" | jq -r '.commit.committer.name')
+            committer_email=$(echo "$commit" | jq -r '.commit.committer.email')
+            commit_message=$(echo "$commit" | jq -r '.commit.message')
+            commit_author="$author_name <$author_email>"
+
+            # Add committer info
+            git config --global user.email "$committer_email"
+            git config --global user.name "$committer_name"
+
+            # Generate patch and store in a file
+            curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
+
+            # apply this patch to master branch
+            git apply -v "$sha.patch"
+
+            # Delete patch file
+            rm "$sha.patch"
+
+            git add .
+            git commit -m "$commit_message" --author="$commit_author"
           done <<< "$commits"
+          git log
 
       # - name: Create Pull Request
       #   uses: peter-evans/create-pull-request@v5
