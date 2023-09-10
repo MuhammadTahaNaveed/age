@@ -27,10 +27,6 @@ jobs:
 
           while IFS= read -r commit; do
             echo $commit
-            sha=$(echo "$commit" | jq -r '.sha')
-            echo $sha
-            echo $commit.sha
-
           done <<< "$commits"
 
       # - name: Create Pull Request
