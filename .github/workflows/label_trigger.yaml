@@ -13,11 +13,7 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
-      - name: Print Labels
+      - name: Print GitHub Event
         run: |
-          labels=(${{ github.event.pull_request.labels.*.name }})
-          for label in "${labels[@]}"; do
-            if [[ $label == "auto-create"* ]]; then
-              echo "Label: $label"
-            fi
-          done
+          echo "${{ toJson(github.event) }}"
+
