@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Print Labels
         run: |
-          for label in ${{ github.event.pull_request.labels.*.name }}; do
-            echo "Label: $label"
-          done
+          const labels = ${{ toJson(github.event.pull_request.labels.*.name) }};
+          for (const label of labels) {
+            if (label.startsWith("auto-create")) {
+              console.log(`Label: ${label}`);
+            }
+          }
