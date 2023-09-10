@@ -16,7 +16,5 @@ jobs:
       - name: Print Labels
         run: |
           for label in ${{ github.event.pull_request.labels.*.name }}; do
-            if [[ $label == "auto-create"* ]]; then
-              echo "Label: $label"
-            fi
+            echo "Label: $label"
           done
