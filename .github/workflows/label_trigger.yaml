@@ -8,7 +8,7 @@ jobs:
   tweet:
     if: >-
       (
-        contains(github.event.pull_request.user.login, 'MuhammadTahaNaveed', 'john') &&
+        contains(['MuhammadTahaNaveed', 'john'], github.event.pull_request.user.login) &&
         contains(join(github.event.pull_request.labels.*.name, ' '), 'auto-create')
       )
     runs-on: ubuntu-latest
