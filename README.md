@@ -15,7 +15,7 @@
      
 </h3>
 
-<h3 align="center">Graph Processing & Analytics for Relational Databases</h3>
+<h3 align="center">Graph Processing & Analytics for Relational Databass</h3>
 
 <br>
 
