@@ -38,6 +38,8 @@ jobs:
             git config --global user.email "$committer_email"
             git config --global user.name "$committer_name"
 
+            echo "Applying commit: $sha"
+
             # Generate patch and store in a file
             curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
 
