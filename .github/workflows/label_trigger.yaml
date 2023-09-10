@@ -23,7 +23,7 @@ jobs:
           branch_name="${label#auto-create-}"
 
           commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "${{ github.event.pull_request.commits.href }}")
+            ${{ github.event.pull_request.commits.href }})
 
           while IFS= read -r commit; do
             echo $commit
