@@ -41,7 +41,7 @@ jobs:
             echo "Applying commit: $sha"
 
             # Generate patch and store in a file
-            curl -L "https://github.com/${{ github.repository }}/commit/$sha.patch" -o "$sha.patch"
+            echo "https://github.com/${{ github.repository }}/commit/$sha.patch"
 
             # apply this patch to master branch
             git apply -v "$sha.patch"
