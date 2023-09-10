@@ -19,5 +19,5 @@ jobs:
 
       - name: Print branch
         run: |
-          echo "${{ github.event.label.name | replace('auto-create-', '') }}"
-
+          branch_name="${label#auto-create-}"
+          echo "Text after 'auto-create-': $branch_name"
