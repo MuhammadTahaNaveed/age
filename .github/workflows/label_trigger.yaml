@@ -22,12 +22,17 @@ jobs:
           label="${{ github.event.label.name }}"
           branch_name="${label#auto-create-}"
 
-          commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            ${{ github.event.pull_request.commits.href }})
+          if [ -n "${{ github.event.pull_request.commits.href }}" ]; then
+            commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.event.pull_request.commits.href }}")
 
-          while IFS= read -r commit; do
-            echo $commit
-          done <<< "$commits"
+            while IFS= read -r commit; do
+              echo $commit
+            done <<< "$commits"
+          else
+            echo "Error: github.event.pull_request.commits.href is empty or invalid."
+          fi
+
 
       # - name: Create Pull Request
       #   uses: peter-evans/create-pull-request@v5
