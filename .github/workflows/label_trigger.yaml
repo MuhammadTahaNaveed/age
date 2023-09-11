@@ -36,6 +36,7 @@ jobs:
           ref: ${{ env.BASE }}
 
       - name: Extract and apply commits
+        id: apply_commits
         run: |
           commits=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "${{ github.event.pull_request._links.commits.href }}" | jq -c '.[]')
@@ -71,6 +72,7 @@ jobs:
           git log
 
       - name: Create Pull Request
+        if: ${{ steps.apply_commits.conclusion == 'success' }}
         uses: peter-evans/create-pull-request@v5
         with:
           branch: automated/${{ env.BASE }}/${{ env.PR_NUMBER }}  #this will contain the head branch name + PG11 + some keyword to indicate that this branch is created by github bot
@@ -86,6 +88,7 @@ jobs:
           delete-branch: true
 
       - name: Create comment
+        if: ${{ steps.apply_commits.conclusion == 'failure' }}
         uses: peter-evans/create-or-update-comment@v3
         with:
           issue-number: ${{ env.PR_NUMBER }}
