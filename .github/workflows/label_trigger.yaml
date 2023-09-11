@@ -99,5 +99,5 @@ jobs:
 
             [1]: https://github.com/peter-evans/create-or-update-comment
 
-# TODO:
+# TODO
 # - If patch fails, comment on PR with a link to the failed job logs.
