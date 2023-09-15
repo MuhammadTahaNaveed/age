@@ -13,9 +13,11 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
-      - name: Print GitHub Event
+      - name: Extract run id
         run: |
-          echo "${{ toJson(github.job) }}"
+          run_id=$(echo "${{ github.run_id }}")
+          echo "RUN_ID=$run_id" >> $GITHUB_ENV
+
       - name: Extract PR info
         run: |
           pr_info=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
@@ -96,7 +98,7 @@ jobs:
         with:
           issue-number: ${{ env.PR_NUMBER }}
           body: |
-            Auto PR failed for branch ${{ env.BASE }}. Please check the [logs](https://github.com) for more details.
+            Auto PR failed for branch ${{ env.BASE }}. Please check the [logs](https://github.com/MuhammadTahaNaveed/actions/runs/${{ env.RUN_ID }}) for more details.
 
 # TODO:
 # - If patch fails, comment on PR with a link to the failed job logs.
