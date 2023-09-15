@@ -13,6 +13,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
+      - name: Print GitHub Event
+        run: |
+          echo "${{ toJson(github) }}"
       - name: Extract PR info
         run: |
           pr_info=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
