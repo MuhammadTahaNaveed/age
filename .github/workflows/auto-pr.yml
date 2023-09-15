@@ -26,7 +26,7 @@ jobs:
 
     strategy:
       matrix:
-        branch: ['PG11', 'PG12', 'PG13', 'PG14', 'PG15']
+        branch: ['PG11', 'PG12', 'PG13', 'PG14']
 
     steps:
       - uses: actions/checkout@v3
