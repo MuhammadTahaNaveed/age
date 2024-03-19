@@ -278,10 +278,10 @@ static cypher_target_node *get_referenced_variable(ParseState *pstate,
                                                    List *transformed_path);
 
 //call...[yield]
-static Query *transform_cypher_call_stmt(cypher_parsestate *cpstate,
-                                         cypher_clause *clause);
-static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
-                                             cypher_clause *clause);
+static Query *transform_cypher_call_yield_stmt(cypher_parsestate *cpstate,
+                                               cypher_clause *clause);
+static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
+                                                   cypher_clause *clause);
 
 // transform
 #define PREV_CYPHER_CLAUSE_ALIAS AGE_DEFAULT_ALIAS_PREFIX"previous_cypher_clause"
@@ -408,9 +408,9 @@ Query *transform_cypher_clause(cypher_parsestate *cpstate,
                                                     transform_cypher_unwind,
                                                     clause, n->where);
     }
-    else if (is_ag_node(self, cypher_call))
+    else if (is_ag_node(self, cypher_call_yield))
     {
-        result = transform_cypher_call_stmt(cpstate, clause);
+        result = transform_cypher_call_yield_stmt(cpstate, clause);
     }
     else
     {
@@ -1055,14 +1055,14 @@ transform_cypher_union_tree(cypher_parsestate *cpstate, cypher_clause *clause,
 /*
  * Function that takes a cypher call and returns the yielded result
  * This function also catches some cases that should fail that could not
- * be picked up by the grammar. transform_cypher_call_subquery handles the
+ * be picked up by the grammar. transform_cypher_call_yield_subquery handles the
  * call transformation itself.
  */
-static Query *transform_cypher_call_stmt(cypher_parsestate *cpstate,
+static Query *transform_cypher_call_yield_stmt(cypher_parsestate *cpstate,
                                          cypher_clause *clause)
 {
     ParseState *pstate = (ParseState *)cpstate;
-    cypher_call *self = (cypher_call *)clause->self;
+    cypher_call_yield *self = (cypher_call_yield *)clause->self;
 
     if (!clause->prev && !clause->next) /* CALL [YIELD] -- the most simple call */
     {
@@ -1078,7 +1078,7 @@ static Query *transform_cypher_call_stmt(cypher_parsestate *cpstate,
                                         exprLocation((Node *) self->where))));
         }
 
-        return transform_cypher_call_subquery(cpstate, clause);
+        return transform_cypher_call_yield_subquery(cpstate, clause);
     }
     else /* subqueries */
     {
@@ -1104,7 +1104,7 @@ static Query *transform_cypher_call_stmt(cypher_parsestate *cpstate,
         }
 
         return transform_cypher_clause_with_where(cpstate,
-                                                  transform_cypher_call_subquery,
+                                                  transform_cypher_call_yield_subquery,
                                                   clause, self->where);
     }
 
@@ -1112,15 +1112,15 @@ static Query *transform_cypher_call_stmt(cypher_parsestate *cpstate,
 }
 
 /*
- * Helper routine for transform_cypher_call_stmt. This routine transforms the
+ * Helper routine for transform_cypher_call_yield_stmt. This routine transforms the
  * call statement and handles the YIELD clause.
  */
-static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
+static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
                                              cypher_clause *clause)
 {
     ParseState *pstate = (ParseState *)cpstate;
     ParseState *p_child_parse_state = make_parsestate(NULL);
-    cypher_call *self = (cypher_call *)clause->self;
+    cypher_call_yield *self = (cypher_call_yield *)clause->self;
     Query *query;
     char *colName;
     FuncExpr *node = NULL;

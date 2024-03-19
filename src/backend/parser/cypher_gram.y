@@ -376,14 +376,14 @@ cypher_stmt:
 call_stmt:
     CALL expr_func_norm
         {
-            cypher_call *n = make_ag_node(cypher_call);
+            cypher_call_yield *n = make_ag_node(cypher_call_yield);
             n->funccall = castNode (FuncCall, $2);
 
             $$ = (Node *)n;
         }
     | CALL expr '.' expr
         {
-            cypher_call *n = make_ag_node(cypher_call);
+            cypher_call_yield *n = make_ag_node(cypher_call_yield);
 
             if (IsA($4, FuncCall) && IsA($2, ColumnRef))
             {
@@ -422,7 +422,7 @@ call_stmt:
         }
     | CALL expr_func_norm YIELD yield_item_list where_opt
         {
-            cypher_call *n = make_ag_node(cypher_call);
+            cypher_call_yield *n = make_ag_node(cypher_call_yield);
             n->funccall = castNode (FuncCall, $2);
             n->yield_items = $4;
             n->where = $5;
@@ -430,7 +430,7 @@ call_stmt:
         }
     | CALL expr '.' expr YIELD yield_item_list where_opt
         {
-            cypher_call *n = make_ag_node(cypher_call);
+            cypher_call_yield *n = make_ag_node(cypher_call_yield);
 
             if (IsA($4, FuncCall) && IsA($2, ColumnRef))
             {

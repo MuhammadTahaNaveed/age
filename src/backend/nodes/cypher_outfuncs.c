@@ -330,10 +330,10 @@ void out_cypher_sub_query(StringInfo str, const ExtensibleNode *node)
     WRITE_NODE_FIELD(query);
 }
 
-// serialization function for the cypher_call ExtensibleNode.
-void out_cypher_call(StringInfo str, const ExtensibleNode *node)
+// serialization function for the cypher_call_yield ExtensibleNode.
+void out_cypher_call_yield(StringInfo str, const ExtensibleNode *node)
 {
-    DEFINE_AG_NODE(cypher_call);
+    DEFINE_AG_NODE(cypher_call_yield);
 
     WRITE_NODE_FIELD(funccall);
     WRITE_NODE_FIELD(funcexpr);

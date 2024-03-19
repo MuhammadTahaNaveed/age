@@ -25,6 +25,7 @@
 /* cypher sub patterns/queries */
 typedef enum csp_kind
 {
+        CSP_CALL,
         CSP_EXISTS,
         CSP_SIZE,
         CSP_FINDPATH /* shortestpath, allshortestpaths, dijkstra */
@@ -276,7 +277,7 @@ typedef struct cypher_comparison_boolexpr
  * procedure call
  */
 
-typedef struct cypher_call
+typedef struct cypher_call_yield
 {
     ExtensibleNode extensible;
     FuncCall *funccall; /*from the parser */
@@ -284,7 +285,7 @@ typedef struct cypher_call
 
     Node *where;
     List *yield_items; // optional yield subclause
-} cypher_call;
+} cypher_call_yield;
 
 #define CYPHER_CLAUSE_FLAG_NONE 0x0000
 #define CYPHER_CLAUSE_FLAG_TERMINAL 0x0001
