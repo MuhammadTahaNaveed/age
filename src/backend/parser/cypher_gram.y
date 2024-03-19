@@ -381,45 +381,6 @@ call_stmt:
 
             $$ = (Node *)n;
         }
-    | CALL expr '.' expr
-        {
-            cypher_call_yield *n = make_ag_node(cypher_call_yield);
-
-            if (IsA($4, FuncCall) && IsA($2, ColumnRef))
-            {
-                FuncCall *fc = (FuncCall*)$4;
-                ColumnRef *cr = (ColumnRef*)$2;
-                List *fields = cr->fields;
-                String *string = linitial(fields);
-
-                /*
-                 * A function can only be qualified with a single schema. So, we
-                 * check to see that the function isn't already qualified. There
-                 * may be unforeseen cases where we might need to remove this in
-                 * the future.
-                 */
-                if (list_length(fc->funcname) == 1)
-                {
-                    fc->funcname = lcons(string, fc->funcname);
-                    $$ = (Node*)fc;
-                }
-                else
-                    ereport(ERROR,
-                            (errcode(ERRCODE_SYNTAX_ERROR),
-                             errmsg("function already qualified"),
-                             ag_scanner_errposition(@1, scanner)));
-
-                n->funccall = fc;
-                $$ = (Node *)n;
-            }
-            else
-            {
-                ereport(ERROR,
-                        (errcode(ERRCODE_SYNTAX_ERROR),
-                         errmsg("CALL statement must be a qualified function"),
-                         ag_scanner_errposition(@1, scanner)));
-            }
-        }
     | CALL expr_func_norm YIELD yield_item_list where_opt
         {
             cypher_call_yield *n = make_ag_node(cypher_call_yield);
@@ -428,46 +389,13 @@ call_stmt:
             n->where = $5;
             $$ = (Node *)n;
         }
-    | CALL expr '.' expr YIELD yield_item_list where_opt
+    | CALL '{' single_query '}'
         {
-            cypher_call_yield *n = make_ag_node(cypher_call_yield);
-
-            if (IsA($4, FuncCall) && IsA($2, ColumnRef))
-            {
-                FuncCall *fc = (FuncCall*)$4;
-                ColumnRef *cr = (ColumnRef*)$2;
-                List *fields = cr->fields;
-                String *string = linitial(fields);
-
-                /*
-                 * A function can only be qualified with a single schema. So, we
-                 * check to see that the function isn't already qualified. There
-                 * may be unforeseen cases where we might need to remove this in
-                 * the future.
-                 */
-                if (list_length(fc->funcname) == 1)
-                {
-                    fc->funcname = lcons(string, fc->funcname);
-                    $$ = (Node*)fc;
-                }
-                else
-                    ereport(ERROR,
-                            (errcode(ERRCODE_SYNTAX_ERROR),
-                             errmsg("function already qualified"),
-                             ag_scanner_errposition(@1, scanner)));
-
-                n->funccall = fc;
-                n->yield_items = $6;
-                n->where = $7;
-                $$ = (Node *)n;
-            }
-            else
-            {
-                ereport(ERROR,
-                        (errcode(ERRCODE_SYNTAX_ERROR),
-                         errmsg("CALL statement must be a qualified function"),
-                         ag_scanner_errposition(@1, scanner)));
-            }
+            ereport(ERROR,
+                    (errcode(ERRCODE_SYNTAX_ERROR),
+                     errmsg("CALL clause does not support subqueries"),
+                     ag_scanner_errposition(@1, scanner)));
+            $$ = NULL;
         }
     ;
 
