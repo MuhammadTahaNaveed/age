@@ -287,6 +287,15 @@ typedef struct cypher_call_yield
     List *yield_items; // optional yield subclause
 } cypher_call_yield;
 
+/*
+ * call subquery
+ */
+typedef struct cypher_call_subquery
+{
+    ExtensibleNode extensible;
+    cypher_sub_query *subquery;
+} cypher_call_subquery;
+
 #define CYPHER_CLAUSE_FLAG_NONE 0x0000
 #define CYPHER_CLAUSE_FLAG_TERMINAL 0x0001
 #define CYPHER_CLAUSE_FLAG_PREVIOUS_CLAUSE 0x0002

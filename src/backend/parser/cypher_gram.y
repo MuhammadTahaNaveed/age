@@ -136,6 +136,9 @@
 %type <node> call_stmt yield_item
 %type <list> yield_item_list
 
+/* CALL subquery clause */
+%type <node> call_subquery
+
 /* common */
 %type <node> where_opt
 
@@ -389,13 +392,19 @@ call_stmt:
             n->where = $5;
             $$ = (Node *)n;
         }
-    | CALL '{' single_query '}'
+    ;
+
+call_subquery:
+    CALL '{' single_query '}'
         {
-            ereport(ERROR,
-                    (errcode(ERRCODE_SYNTAX_ERROR),
-                     errmsg("CALL clause does not support subqueries"),
-                     ag_scanner_errposition(@1, scanner)));
-            $$ = NULL;
+            cypher_call_subquery *n = make_ag_node(cypher_call_subquery);
+            cypher_sub_query *sq = make_ag_node(cypher_sub_query);
+
+            sq->kind = CSP_CALL;
+            sq->query = $3;
+
+            n->subquery = sq;
+            $$ = (Node *)n;
         }
     ;
 
@@ -511,6 +520,7 @@ reading_clause:
     match
     | unwind
     | call_stmt
+    | call_subquery
     ;
 
 updating_clause_list_0:

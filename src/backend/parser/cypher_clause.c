@@ -282,6 +282,10 @@ static Query *transform_cypher_call_yield_stmt(cypher_parsestate *cpstate,
                                                cypher_clause *clause);
 static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
                                                    cypher_clause *clause);
+// call subquery
+static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
+                                             cypher_clause *clause);
+static List *makeTargetListFromPNSItem(ParseState *pstate, ParseNamespaceItem *pnsi);
 
 // transform
 #define PREV_CYPHER_CLAUSE_ALIAS AGE_DEFAULT_ALIAS_PREFIX"previous_cypher_clause"
@@ -411,6 +415,10 @@ Query *transform_cypher_clause(cypher_parsestate *cpstate,
     else if (is_ag_node(self, cypher_call_yield))
     {
         result = transform_cypher_call_yield_stmt(cpstate, clause);
+    }
+    else if (is_ag_node(self, cypher_call_subquery))
+    {
+        result = transform_cypher_call_subquery(cpstate, clause);
     }
     else
     {
@@ -1254,6 +1262,63 @@ static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
     }
 
     free_parsestate(p_child_parse_state);
+
+    return query;
+}
+
+/*
+ * transform_cypher_call_subquery
+ */
+static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
+                                             cypher_clause *clause)
+{
+    ParseState *pstate = (ParseState *)cpstate;
+    cypher_parsestate *dup_cpstate = make_cypher_parsestate(cpstate);
+    cypher_call_subquery *self = (cypher_call_subquery *)clause->self;
+    cypher_sub_query *sub_query = (cypher_sub_query *)self->subquery;
+    ParseNamespaceItem *pnsi;
+    Query *query;
+    cypher_clause *sub_clause;
+    Node* first_clause;
+
+    sub_clause = palloc(sizeof(*sub_clause));
+    sub_clause->prev = NULL;
+    sub_clause->next = NULL;
+    sub_clause->self = (Node *)sub_query;
+
+    query = makeNode(Query);
+    query->commandType = CMD_SELECT;
+
+    if (clause->prev)
+    {
+        handle_prev_clause(cpstate, query, clause->prev, false);
+    }
+
+    pstate->p_lateral_active = true;
+    pnsi = transform_cypher_clause_as_subquery(cpstate,
+                                               transform_cypher_clause, sub_clause,
+                                               NULL, true);
+    pstate->p_lateral_active = false;
+
+    query->targetList = list_concat(query->targetList,
+                                    makeTargetListFromPNSItem(pstate,pnsi));
+
+    markTargetListOrigins(pstate, query->targetList);
+
+    query->rtable = pstate->p_rtable;
+    query->rteperminfos = pstate->p_rteperminfos;
+    query->jointree = makeFromExpr(pstate->p_joinlist, NULL);
+    query->hasSubLinks = pstate->p_hasSubLinks;
+    query->hasTargetSRFs = pstate->p_hasTargetSRFs;
+    query->hasAggs = pstate->p_hasAggs;
+
+    if (query->hasAggs)
+    {
+        parse_check_aggregates(pstate, query);
+    }
+
+    assign_query_collations(pstate, query);
+
 
     return query;
 }
@@ -2871,7 +2936,14 @@ static Query *transform_cypher_sub_query(cypher_parsestate *cpstate,
     qry = makeNode(Query);
     qry->commandType = CMD_SELECT;
 
-    child_parse_state->subquery_where_flag = true;
+    if (sub_query->kind == CSP_EXISTS)
+    {
+        child_parse_state->subquery_where_flag = true;
+    }
+    else if (sub_query->kind == CSP_CALL)
+    {
+
+    }
 
     pnsi = transform_cypher_clause_as_subquery(child_parse_state,
                                                transform_cypher_clause,

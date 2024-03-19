@@ -341,6 +341,14 @@ void out_cypher_call_yield(StringInfo str, const ExtensibleNode *node)
     WRITE_NODE_FIELD(yield_items);
 }
 
+// serialization function for the cypher_call_subquery ExtensibleNode.
+void out_cypher_call_subquery(StringInfo str, const ExtensibleNode *node)
+{
+    DEFINE_AG_NODE(cypher_call_subquery);
+
+    WRITE_NODE_FIELD(subquery);
+}
+
 // serialization function for the cypher_create_target_nodes ExtensibleNode.
 void out_cypher_create_target_nodes(StringInfo str, const ExtensibleNode *node)
 {

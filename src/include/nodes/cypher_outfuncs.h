@@ -66,8 +66,10 @@ void out_cypher_sub_pattern(StringInfo str, const ExtensibleNode *node);
 void out_cypher_sub_query(StringInfo str, const ExtensibleNode *node);
 
 // procedure call
-
 void out_cypher_call_yield(StringInfo str, const ExtensibleNode *node);
+
+// call subquery
+void out_cypher_call_subquery(StringInfo str, const ExtensibleNode *node);
 
 // create private data structures
 void out_cypher_create_target_nodes(StringInfo str, const ExtensibleNode *node);
