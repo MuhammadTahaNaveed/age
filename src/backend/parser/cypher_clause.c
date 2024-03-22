@@ -1273,18 +1273,27 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
                                              cypher_clause *clause)
 {
     ParseState *pstate = (ParseState *)cpstate;
-    cypher_parsestate *dup_cpstate = make_cypher_parsestate(cpstate);
     cypher_call_subquery *self = (cypher_call_subquery *)clause->self;
     cypher_sub_query *sub_query = (cypher_sub_query *)self->subquery;
     ParseNamespaceItem *pnsi;
     Query *query;
     cypher_clause *sub_clause;
-    Node* first_clause;
+    List *targetList;
+    ListCell *lc;
+    bool has_with_clause;
 
+    // Build a clause for subquery transformation
     sub_clause = palloc(sizeof(*sub_clause));
     sub_clause->prev = NULL;
     sub_clause->next = NULL;
     sub_clause->self = (Node *)sub_query;
+
+    /*
+     * Is subquery's first clause a WITH clause?
+     * It will act as an importing clause for the
+     * variables outside the subquery.
+     */
+    has_with_clause = is_ag_node(linitial(sub_query->query), cypher_with);
 
     query = makeNode(Query);
     query->commandType = CMD_SELECT;
@@ -1294,14 +1303,68 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         handle_prev_clause(cpstate, query, clause->prev, false);
     }
 
+    if (has_with_clause)
+    {
+        /* 
+         * Write logic to make only those variables visible that
+         * are imported using WITH clause.
+         */
+    }
+    else
+    {
+        /*
+         * We have to mark the previous variables as not visible
+         * because they are not imported using WITH clause.
+         */
+        foreach(lc, pstate->p_namespace)
+        {
+            ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
+
+            nsitem->p_cols_visible = false;
+        }
+    }
+
     pstate->p_lateral_active = true;
     pnsi = transform_cypher_clause_as_subquery(cpstate,
-                                               transform_cypher_clause, sub_clause,
-                                               NULL, true);
+                                               transform_cypher_sub_query,
+                                               sub_clause,
+                                               NULL,
+                                               true);
+    
+    /*
+     * We are done with the tranformation of the subquery
+     * so we need to reset the lateral_active flag and
+     * make the variables visible again.
+     */ 
     pstate->p_lateral_active = false;
+    foreach(lc, pstate->p_namespace)
+    {
+        ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
 
-    query->targetList = list_concat(query->targetList,
-                                    makeTargetListFromPNSItem(pstate,pnsi));
+        nsitem->p_cols_visible = true;
+    }
+
+    // Make the target list from the subquery
+    targetList = makeTargetListFromPNSItem(pstate, pnsi);
+
+    /*
+     * Variables already declared in outer scope are not
+     * allowed to be returned by inner scope
+     */ 
+    foreach(lc, targetList)
+    {
+        TargetEntry *tle = (TargetEntry *) lfirst(lc);
+
+        if (findTarget(query->targetList, tle->resname) != NULL)
+        {
+            ereport(ERROR,
+                    (errcode(ERRCODE_DUPLICATE_ALIAS),
+                            errmsg("variable \"%s\" already declared in outer scope", tle->resname),
+                            parser_errposition(pstate, -1)));
+        }
+    }
+
+    query->targetList = list_concat(query->targetList, targetList);
 
     markTargetListOrigins(pstate, query->targetList);
 
@@ -1318,7 +1381,7 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
     }
 
     assign_query_collations(pstate, query);
-
+    pstate->p_lateral_active = false;
 
     return query;
 }
