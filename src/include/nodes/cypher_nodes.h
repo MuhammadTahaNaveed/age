@@ -43,6 +43,7 @@ typedef struct cypher_sub_query
         ExtensibleNode extensible;
         csp_kind kind;
         List *query;
+        int location;
 } cypher_sub_query;
 
 /*

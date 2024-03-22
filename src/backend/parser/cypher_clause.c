@@ -285,6 +285,9 @@ static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
 // call subquery
 static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
                                              cypher_clause *clause);
+static List *get_imports_from_with(cypher_parsestate *cpstate,
+                                   Node *with_node,
+                                   List *targetList);
 static List *makeTargetListFromPNSItem(ParseState *pstate, ParseNamespaceItem *pnsi);
 
 // transform
@@ -1243,8 +1246,6 @@ static Query *transform_cypher_call_yield_subquery(cypher_parsestate *cpstate,
         query->targetList =  list_make1(tle);
     }
 
-
-
     markTargetListOrigins(pstate, query->targetList);
 
     query->rtable = cpstate->pstate.p_rtable;
@@ -1277,23 +1278,19 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
     cypher_sub_query *sub_query = (cypher_sub_query *)self->subquery;
     ParseNamespaceItem *pnsi;
     Query *query;
-    cypher_clause *sub_clause;
+    cypher_clause *subquery_clause;
     List *targetList;
     ListCell *lc;
     bool has_with_clause;
-
-    // Build a clause for subquery transformation
-    sub_clause = palloc(sizeof(*sub_clause));
-    sub_clause->prev = NULL;
-    sub_clause->next = NULL;
-    sub_clause->self = (Node *)sub_query;
+    Node *first_clause;
 
     /*
      * Is subquery's first clause a WITH clause?
-     * It will act as an importing clause for the
+     * If it is, it will act as an importing clause for the
      * variables outside the subquery.
      */
-    has_with_clause = is_ag_node(linitial(sub_query->query), cypher_with);
+    first_clause = linitial(sub_query->query);
+    has_with_clause = is_ag_node(first_clause, cypher_with);
 
     query = makeNode(Query);
     query->commandType = CMD_SELECT;
@@ -1303,12 +1300,31 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         handle_prev_clause(cpstate, query, clause->prev, false);
     }
 
+    // Check if we have imports
     if (has_with_clause)
     {
-        /* 
-         * Write logic to make only those variables visible that
-         * are imported using WITH clause.
+        List *import_list;
+
+        cpstate->cs_is_active = true;
+        import_list = get_imports_from_with(cpstate, first_clause, query->targetList);
+
+        /*
+         * Remove the WITH clause from the subquery if it was just added
+         * for imports.
          */
+        if (list_length(import_list) > 0)
+        {
+            sub_query->query = list_delete_first(sub_query->query);
+
+            /*
+             * If the import clause is WITH *, then we dont need to maintain the
+             * import list becuase all the variables from outer scope are imported.
+             */ 
+            if (!IsA(linitial(import_list), A_Star))
+            {
+                cpstate->cs_import_list = import_list;
+            }
+        }
     }
     else
     {
@@ -1325,9 +1341,12 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
     }
 
     pstate->p_lateral_active = true;
+
+    // Build subquery clause and transform it
+    subquery_clause = make_cypher_clause(sub_query->query);
     pnsi = transform_cypher_clause_as_subquery(cpstate,
-                                               transform_cypher_sub_query,
-                                               sub_clause,
+                                               transform_cypher_clause,
+                                               subquery_clause,
                                                NULL,
                                                true);
     
@@ -1384,6 +1403,81 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
     pstate->p_lateral_active = false;
 
     return query;
+}
+
+/*
+ * Helper function for transform_cypher_call_subquery to verify the import rules
+ * and return list of ColumnRef nodes that are imported from the outer scope.
+ */
+static List *get_imports_from_with(cypher_parsestate *cpstate,
+                                   Node *with_node,
+                                   List *targetList)
+{
+    ParseState *pstate = (ParseState *)cpstate;
+    cypher_with *with = (cypher_with *)with_node;
+    List *cr_list = NIL;
+    ListCell *lc;
+    bool has_other_type = false;
+
+    foreach(lc, with->items)
+    {
+        /*
+         * We are only interested in the ColumnRef nodes that are already
+         * present in the targetList of outerscope.
+         */
+        ResTarget *res_target = (ResTarget *)lfirst(lc);
+        if (IsA(res_target->val, ColumnRef))
+        {
+            ColumnRef *columnref = (ColumnRef *)res_target->val;
+            char *field_name;
+            
+            if (IsA(linitial(columnref->fields), A_Star))
+            {
+                cr_list = lappend(NIL, linitial(columnref->fields));
+                break;
+            }
+
+            field_name = strVal(linitial(columnref->fields));
+            if (findTarget(targetList, field_name) != NULL)
+            {
+                if (has_other_type || res_target->name)
+                {
+                    ereport(ERROR,
+                            (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                             errmsg("Invalid use of importing WITH clause"),
+                             errdetail("Importing WITH should consist only of simple references to outside variables. Aliasing or expressions are not supported."),
+                             parser_errposition(pstate, columnref->location)));
+                }
+                cr_list = lappend(cr_list, columnref);
+            }
+            else
+            {
+                // Just error out because the imported variable is not found in the outer scope
+                ereport(ERROR,
+                        (errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+                         errmsg("Variable \"%s\"  not defined", field_name),
+                         parser_errposition(pstate, columnref->location)));
+            }
+        }
+        else
+        {
+            /*
+             * This is to keep track of the other types of nodes in the WITH clause,
+             * If a simple reference to outer scope comes with another expression or alias,
+             * we need to throw an error.
+             * 
+             * For example, queries like:
+             * WITH <outer_variable>, 'i' as <variable_name> => not allowed
+             * WITH <outer_variable> as alias => not allowed
+             * 
+             * However, only expressions without any reference to outer scope are allowed. For example,
+             * WITH 1 + 2 as alias => allowed
+             * WITH 'i' as alias, 'b' as alias => allowed 
+             */
+            has_other_type = true;
+        }
+    }
+    return cr_list;
 }
 
 /*
@@ -2983,7 +3077,7 @@ static Query *transform_cypher_sub_pattern(cypher_parsestate *cpstate,
 }
 
 static Query *transform_cypher_sub_query(cypher_parsestate *cpstate,
-                                           cypher_clause *clause)
+                                         cypher_clause *clause)
 {
     cypher_clause *c;
     Query *qry;
@@ -3002,10 +3096,6 @@ static Query *transform_cypher_sub_query(cypher_parsestate *cpstate,
     if (sub_query->kind == CSP_EXISTS)
     {
         child_parse_state->subquery_where_flag = true;
-    }
-    else if (sub_query->kind == CSP_CALL)
-    {
-
     }
 
     pnsi = transform_cypher_clause_as_subquery(child_parse_state,
@@ -6461,6 +6551,10 @@ static Query *analyze_cypher_clause(transform_method transform,
 
     /* copy the expr_kind down to the child */
     pstate->p_expr_kind = parent_pstate->p_expr_kind;
+
+    // copy the context of call subquery
+    cpstate->cs_is_active = parent_cpstate->cs_is_active;
+    cpstate->cs_import_list = parent_cpstate->cs_import_list;
 
     query = transform(cpstate, clause);
 

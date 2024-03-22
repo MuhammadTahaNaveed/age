@@ -51,6 +51,11 @@ typedef struct cypher_parsestate
     bool exprHasAgg;
     bool p_opt_match;
     bool p_list_comp;
+    /*
+     * Call subquery context
+     */
+    bool cs_is_active;
+    List *cs_import_list;
 } cypher_parsestate;
 
 typedef struct errpos_ecb_state

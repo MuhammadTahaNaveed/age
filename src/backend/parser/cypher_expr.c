@@ -360,6 +360,42 @@ static Node *transform_ColumnRef(cypher_parsestate *cpstate, ColumnRef *cref)
                 Assert(IsA(field1, String));
                 colname = strVal(field1);
 
+                // Commented out for now because there is an issue with this approach
+                // Issue: If a new variable is created in call subquery, we dont have a way to distuinguish
+                // between the new variable and the existing variable in the outer query. So it errors out.
+                
+                // Check if we are in call subquery context
+                // if (cpstate->cs_is_active)
+                // {
+                //     // We need to check that the column we are trying to access
+                //     // is in the import list
+                //     ListCell *lc;
+                //     bool found = false;
+                //     foreach (lc, cpstate->cs_import_list)
+                //     {
+                //         ColumnRef *imported_col;
+                //         char *imported_colname;
+
+                //         imported_col = lfirst(lc);
+                //         imported_colname = strVal(linitial(imported_col->fields));
+
+                //         if (strcmp(imported_colname, colname) == 0)
+                //         {
+                //             found = true;
+                //             break;
+                //         }
+                //     }
+
+                //     if (!found)
+                //     {
+                //         ereport(ERROR,
+                //                 (errcode(ERRCODE_UNDEFINED_COLUMN),
+                //                  errmsg("variable `%s` does not exist", colname),
+                //                  errdetail("Either the variable does not exist or it is not in the imported using WITH clause."),
+                //                  parser_errposition(pstate, cref->location)));
+                //     }
+                // }
+
                 if (cpstate->p_list_comp &&
                     (pstate->p_expr_kind == EXPR_KIND_WHERE ||
                      pstate->p_expr_kind == EXPR_KIND_SELECT_TARGET) &&
