@@ -400,9 +400,6 @@ call_subquery:
             cypher_call_subquery *n = make_ag_node(cypher_call_subquery);
             cypher_sub_query *sq = make_ag_node(cypher_sub_query);
 
-            sq->kind = CSP_CALL;
-            sq->query = $3;
-
             // Check if the first clause is WITH
             if (is_ag_node(linitial($3), cypher_with))
             {
@@ -413,14 +410,21 @@ call_subquery:
                  * in the importing WITH clause
                  */
                 if (w->order_by || w->distinct || w->skip || w->limit || w->where)
+                {
                     ereport(ERROR,
                             (errcode(ERRCODE_SYNTAX_ERROR),
                              errmsg("WITH clause in CALL subquery cannot have ORDER BY, DISTINCT, SKIP, WHERE or LIMIT"),
                              errdetail("Importing WITH should consist only of simple references to outside variables."),
-                             ag_scanner_errposition(-1, scanner)));
+                             ag_scanner_errposition(w->location, scanner)));
+                }
             }
 
+            sq->kind = CSP_CALL;
+            sq->query = $3;
+            sq->location = @3;
+
             n->subquery = sq;
+            n->location = @1;
             $$ = (Node *)n;
         }
     ;
@@ -917,6 +921,7 @@ with:
             n->skip = $5;
             n->limit = $6;
             n->where = $7;
+            n->location = @1;
 
             $$ = (Node *)n;
         }
@@ -949,6 +954,7 @@ with:
             n->skip = $4;
             n->limit = $5;
             n->where = $6;
+            n->location = @1;
 
             $$ = (Node *)n;
         }

@@ -74,6 +74,7 @@ typedef struct cypher_with
     Node *skip;
     Node *limit;
     Node *where;
+    int location;
 } cypher_with;
 
 typedef struct cypher_match
@@ -295,6 +296,7 @@ typedef struct cypher_call_subquery
 {
     ExtensibleNode extensible;
     cypher_sub_query *subquery;
+    int location;
 } cypher_call_subquery;
 
 #define CYPHER_CLAUSE_FLAG_NONE 0x0000

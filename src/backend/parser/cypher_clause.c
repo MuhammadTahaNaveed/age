@@ -1356,11 +1356,16 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
      * make the variables visible again.
      */ 
     pstate->p_lateral_active = false;
-    foreach(lc, pstate->p_namespace)
-    {
-        ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
 
-        nsitem->p_cols_visible = true;
+    if (!has_with_clause)
+    {
+        // Make the variables visible again
+        foreach(lc, pstate->p_namespace)
+        {
+            ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
+
+            nsitem->p_cols_visible = true;
+        }
     }
 
     // Make the target list from the subquery
@@ -1378,8 +1383,8 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         {
             ereport(ERROR,
                     (errcode(ERRCODE_DUPLICATE_ALIAS),
-                            errmsg("variable \"%s\" already declared in outer scope", tle->resname),
-                            parser_errposition(pstate, -1)));
+                     errmsg("variable \"%s\" already declared in outer scope", tle->resname),
+                     parser_errposition(pstate, self->location)));
         }
     }
 
@@ -1400,7 +1405,6 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
     }
 
     assign_query_collations(pstate, query);
-    pstate->p_lateral_active = false;
 
     return query;
 }
@@ -1455,7 +1459,7 @@ static List *get_imports_from_with(cypher_parsestate *cpstate,
                 // Just error out because the imported variable is not found in the outer scope
                 ereport(ERROR,
                         (errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
-                         errmsg("Variable \"%s\"  not defined", field_name),
+                         errmsg("Variable \"%s\" not defined", field_name),
                          parser_errposition(pstate, columnref->location)));
             }
         }
@@ -1465,14 +1469,14 @@ static List *get_imports_from_with(cypher_parsestate *cpstate,
              * This is to keep track of the other types of nodes in the WITH clause,
              * If a simple reference to outer scope comes with another expression or alias,
              * we need to throw an error.
-             * 
+             *
              * For example, queries like:
              * WITH <outer_variable>, 'i' as <variable_name> => not allowed
              * WITH <outer_variable> as alias => not allowed
-             * 
+             *
              * However, only expressions without any reference to outer scope are allowed. For example,
              * WITH 1 + 2 as alias => allowed
-             * WITH 'i' as alias, 'b' as alias => allowed 
+             * WITH 'i' as alias, 'b' as alias => allowed
              */
             has_other_type = true;
         }
