@@ -1300,12 +1300,13 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         handle_prev_clause(cpstate, query, clause->prev, false);
     }
 
+    cpstate->cs_is_active = true;
+
     // Check if we have imports
     if (has_with_clause)
     {
         List *import_list;
-
-        cpstate->cs_is_active = true;
+        cpstate->cs_has_importing_clause = true;
         import_list = get_imports_from_with(cpstate, first_clause, query->targetList);
 
         /*
@@ -1315,15 +1316,7 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         if (list_length(import_list) > 0)
         {
             sub_query->query = list_delete_first(sub_query->query);
-
-            /*
-             * If the import clause is WITH *, then we dont need to maintain the
-             * import list becuase all the variables from outer scope are imported.
-             */ 
-            if (!IsA(linitial(import_list), A_Star))
-            {
-                cpstate->cs_import_list = import_list;
-            }
+            cpstate->cs_import_list = import_list;
         }
     }
     else
@@ -1332,6 +1325,7 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
          * We have to mark the previous variables as not visible
          * because they are not imported using WITH clause.
          */
+        cpstate->cs_has_importing_clause = false;
         foreach(lc, pstate->p_namespace)
         {
             ParseNamespaceItem *nsitem = (ParseNamespaceItem *) lfirst(lc);
@@ -1388,8 +1382,12 @@ static Query *transform_cypher_call_subquery(cypher_parsestate *cpstate,
         }
     }
 
-    query->targetList = list_concat(query->targetList, targetList);
+    // Reset the call subquery context in cpstate
+    cpstate->cs_is_active = false;
+    cpstate->cs_has_importing_clause = false;
+    cpstate->cs_import_list = NIL;
 
+    query->targetList = list_concat(query->targetList, targetList);
     markTargetListOrigins(pstate, query->targetList);
 
     query->rtable = pstate->p_rtable;
@@ -6558,6 +6556,7 @@ static Query *analyze_cypher_clause(transform_method transform,
 
     // copy the context of call subquery
     cpstate->cs_is_active = parent_cpstate->cs_is_active;
+    cpstate->cs_has_importing_clause = parent_cpstate->cs_has_importing_clause;
     cpstate->cs_import_list = parent_cpstate->cs_import_list;
 
     query = transform(cpstate, clause);

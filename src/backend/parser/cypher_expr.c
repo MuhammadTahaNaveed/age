@@ -360,41 +360,79 @@ static Node *transform_ColumnRef(cypher_parsestate *cpstate, ColumnRef *cref)
                 Assert(IsA(field1, String));
                 colname = strVal(field1);
 
-                // Commented out for now because there is an issue with this approach
-                // Issue: If a new variable is created in call subquery, we dont have a way to distuinguish
-                // between the new variable and the existing variable in the outer query. So it errors out.
-                
-                // Check if we are in call subquery context
-                // if (cpstate->cs_is_active)
-                // {
-                //     // We need to check that the column we are trying to access
-                //     // is in the import list
-                //     ListCell *lc;
-                //     bool found = false;
-                //     foreach (lc, cpstate->cs_import_list)
-                //     {
-                //         ColumnRef *imported_col;
-                //         char *imported_colname;
+                /*
+                 * Check if we are in call subquery context and we have an
+                 * importing clause
+                 */ 
+                if (cpstate->cs_is_active && cpstate->cs_has_importing_clause)
+                {
+                    bool found_in_import_list = false;
 
-                //         imported_col = lfirst(lc);
-                //         imported_colname = strVal(linitial(imported_col->fields));
+                    /*
+                     * Try to find the colname in the import list. If we have
+                     * found it, we can let the tranformation continue.
+                     */ 
+                    if (cpstate->cs_import_list != NIL)
+                    {
+                        ListCell *lc;
+                        foreach(lc, cpstate->cs_import_list)
+                        {
+                            // Remember, we stored columnrefs in the import list
+                            ColumnRef *imported_var = (ColumnRef *)lfirst(lc);
+                            
+                            // Check if the field is A_star
+                            if (IsA(linitial(imported_var->fields), A_Star))
+                            {
+                                // Every column is imported
+                                found_in_import_list = true;
+                                break;
+                            }
+                            else 
+                            {
+                                char *imported_varname = strVal(linitial(imported_var->fields));
+                                if (strcmp(imported_varname, colname) == 0)
+                                {
+                                    found_in_import_list = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    /*
+                     * If we have not found the variable in the import list,
+                     * it means that either the referenced variable is declared in
+                     * subquery itself or it is not imported.
+                     */
+                    if (!found_in_import_list)
+                    {
+                        /*
+                         * Check if the variable is declared in the subquery itself
+                         * by enabling the localonly flag.
+                         */ 
+                        node = colNameToVar(pstate, colname, true, cref->location);
 
-                //         if (strcmp(imported_colname, colname) == 0)
-                //         {
-                //             found = true;
-                //             break;
-                //         }
-                //     }
-
-                //     if (!found)
-                //     {
-                //         ereport(ERROR,
-                //                 (errcode(ERRCODE_UNDEFINED_COLUMN),
-                //                  errmsg("variable `%s` does not exist", colname),
-                //                  errdetail("Either the variable does not exist or it is not in the imported using WITH clause."),
-                //                  parser_errposition(pstate, cref->location)));
-                //     }
-                // }
+                        if (node != NULL)
+                        {
+                            // If thats the case, we can return the node
+                            break;
+                        }
+                        else
+                        {
+                            /*
+                             * If the variable is not declared in the subquery itself,
+                             * then this means that either the variable does not exist
+                             * or it is not imported. In both cases, we should throw an
+                             * error.
+                             */
+                            ereport(ERROR,
+                                    (errcode(ERRCODE_UNDEFINED_COLUMN),
+                                     errmsg("variable `%s` does not exist", colname),
+                                     errdetail("Variable `%s` is not imported in the subquery or is not declared.", colname),
+                                     parser_errposition(pstate, cref->location)));
+                        }
+                    }
+                }
 
                 if (cpstate->p_list_comp &&
                     (pstate->p_expr_kind == EXPR_KIND_WHERE ||
@@ -418,7 +456,7 @@ static Node *transform_ColumnRef(cypher_parsestate *cpstate, ColumnRef *cref)
 
                 if (node != NULL)
                 {
-                        break;
+                    break;
                 }
 
                 /*

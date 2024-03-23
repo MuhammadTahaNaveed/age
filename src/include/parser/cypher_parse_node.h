@@ -55,6 +55,7 @@ typedef struct cypher_parsestate
      * Call subquery context
      */
     bool cs_is_active;
+    bool cs_has_importing_clause;
     List *cs_import_list;
 } cypher_parsestate;
 
