@@ -1,0 +1,30 @@
+name: Deploy Docker image to GCR
+
+on:
+  push:
+    branches:
+    - 'action-gcr'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+  
+    - id: 'auth'
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}'
+
+    - name: 'Set up Cloud SDK'
+      uses: 'google-github-actions/setup-gcloud@v2'
+
+    - name: build and push the docker image
+      env:
+        GOOGLE_PROJECT_ID: ${{ secrets.GOOGLE_PROJECT_ID }}
+      run: |
+        gcloud auth configure-docker us-central1-docker.pkg.dev
+        docker build -t us-central1-docker.pkg.dev/$GOOGLE_PROJECT_ID/age-demo/age:latest -f ./docker/Dockerfile .
+        docker push us-central1-docker.pkg.dev/$GOOGLE_PROJECT_ID/age-demo/age:latest
