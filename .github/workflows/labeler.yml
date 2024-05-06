@@ -9,4 +9,18 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/labeler@v5.0.0-alpha.1
+    - name: Apply branch labels
+      uses: actions/labeler@v5.0.0
+
+    - name: Apply label based on author
+      if: contains('["MuhammadTahaNaveed", "ha-ha-ha-haa"]', github.event.pull_request.user.login)
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const labelsToAdd = ['internal'];
+          github.rest.issues.addLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: labelsToAdd
+          });
