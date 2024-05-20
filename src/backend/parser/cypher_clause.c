@@ -2284,6 +2284,17 @@ static TargetEntry *find_target_list_entry(cypher_parsestate *cpstate,
         {
             return te;
         }
+
+        if (nodeTag(node) == T_ColumnRef)
+        {
+            ColumnRef *cref = (ColumnRef *)node;
+            char *colname = strVal(linitial(cref->fields));
+
+            if (strcmp(te->resname, colname) == 0)
+            {
+                return te;
+            }
+        }
     }
 
     te = transform_cypher_item(cpstate, node, expr, expr_kind, NULL, true);
