@@ -22,6 +22,7 @@
 #define AG_LOAD_LABELS_H
 
 #include "access/heapam.h"
+#include "utils/load/age_load.h"
 
 #define AGE_VERTIX 1
 #define AGE_EDGE 2
@@ -51,6 +52,7 @@ typedef struct {
     int label_id;
     bool id_field_exists;
     bool load_as_agtype;
+    batch_insert_state *batch_state;
 } csv_vertex_reader;
 
 

@@ -17,6 +17,8 @@
  * under the License.
  */
 
+#include "utils/load/age_load.h"
+
 #ifndef AG_LOAD_EDGES_H
 #define AG_LOAD_EDGES_H
 
@@ -39,7 +41,7 @@ typedef struct {
     char *start_vertex;
     char *end_vertex;
     bool load_as_agtype;
-
+    batch_insert_state *batch_state;
 } csv_edge_reader;
 
 
