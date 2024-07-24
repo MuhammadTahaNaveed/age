@@ -89,12 +89,12 @@ void vertex_row_cb(int delim __attribute__((unused)), void *data)
             label_id_int = (int64)cr->row;
         }
 
-        object_graph_id = make_graphid(cr->object_id, label_id_int);
+        object_graph_id = make_graphid(cr->label_id, label_id_int);
 
         props = create_agtype_from_list(cr->header, cr->fields,
                                         n_fields, label_id_int,
                                         cr->load_as_agtype);
-        insert_vertex_simple(cr->graph_oid, cr->object_name,
+        insert_vertex_simple(cr->graph_oid, cr->label_name,
                              object_graph_id, props);
         pfree(props);
     }
@@ -144,8 +144,8 @@ static int is_term(unsigned char c)
 int create_labels_from_csv_file(char *file_path,
                                 char *graph_name,
                                 Oid graph_oid,
-                                char *object_name,
-                                int object_id,
+                                char *label_name,
+                                int label_id,
                                 bool id_field_exists,
                                 bool load_as_agtype)
 {
@@ -183,8 +183,8 @@ int create_labels_from_csv_file(char *file_path,
     cr.curr_row_length = 0;
     cr.graph_name = graph_name;
     cr.graph_oid = graph_oid;
-    cr.object_name = object_name;
-    cr.object_id = object_id;
+    cr.label_name = label_name;
+    cr.label_id = label_id;
     cr.id_field_exists = id_field_exists;
     cr.load_as_agtype = load_as_agtype;
 
