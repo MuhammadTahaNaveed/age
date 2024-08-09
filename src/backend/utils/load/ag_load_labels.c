@@ -19,11 +19,22 @@
 #include "postgres.h"
 #include "executor/spi.h"
 #include "catalog/namespace.h"
+#include "executor/executor.h"
 
 #include "utils/load/ag_load_labels.h"
 #include "utils/load/csv.h"
 
 static void setup_temp_table_for_vertex_ids(char *graph_name);
+static void insert_batch_in_temp_table(batch_insert_state *batch_state,
+                                       Oid graph_oid, Oid relid);
+static void init_vertex_batch_insert(batch_insert_state **batch_state,
+                                     char *label_name, Oid graph_oid,
+                                     Oid temp_table_relid);
+static void finish_vertex_batch_insert(batch_insert_state **batch_state,
+                                       char *label_name, Oid graph_oid,
+                                       Oid temp_table_relid);
+static void insert_vertex_batch(batch_insert_state *batch_state, char *label_name,
+                                Oid graph_oid, Oid temp_table_relid);
 
 void vertex_field_cb(void *field, size_t field_len, void *data)
 {
@@ -64,6 +75,7 @@ void vertex_row_cb(int delim __attribute__((unused)), void *data)
     graphid vertex_id;
     int64 entry_id;
     TupleTableSlot *slot;
+    TupleTableSlot *temp_id_slot;
 
     n_fields = cr->cur_field;
 
@@ -85,6 +97,13 @@ void vertex_row_cb(int delim __attribute__((unused)), void *data)
         if (cr->id_field_exists)
         {
             entry_id = strtol(cr->fields[0], NULL, 10);
+            if (entry_id > cr->curr_seq_num)
+            {
+                DirectFunctionCall2(setval_oid,
+                                    ObjectIdGetDatum(cr->label_seq_relid),
+                                    Int64GetDatum(entry_id));
+                cr->curr_seq_num = entry_id;
+            }
         }
         else
         {
@@ -95,9 +114,11 @@ void vertex_row_cb(int delim __attribute__((unused)), void *data)
 
         // Get the appropriate slot from the batch state
         slot = batch_state->slots[batch_state->num_tuples];
+        temp_id_slot = batch_state->temp_id_slots[batch_state->num_tuples];
 
         // Clear the slots contents
         ExecClearTuple(slot);
+        ExecClearTuple(temp_id_slot);
 
         // Fill the values in the slot
         slot->tts_values[0] = GRAPHID_GET_DATUM(vertex_id);
@@ -108,14 +129,20 @@ void vertex_row_cb(int delim __attribute__((unused)), void *data)
         slot->tts_isnull[0] = false;
         slot->tts_isnull[1] = false;
 
+        temp_id_slot->tts_values[0] = GRAPHID_GET_DATUM(vertex_id);
+        temp_id_slot->tts_isnull[0] = false;
+
         // Make the slot as containing virtual tuple
         ExecStoreVirtualTuple(slot);
+        ExecStoreVirtualTuple(temp_id_slot);
+
         batch_state->num_tuples++;
 
         if (batch_state->num_tuples >= batch_state->max_tuples)
         {
             // Insert the batch when it is full (i.e. BATCH_SIZE)
-            insert_batch(batch_state, cr->label_name, cr->graph_oid);
+            insert_vertex_batch(batch_state, cr->label_name, cr->graph_oid,
+                                cr->temp_table_relid);
             batch_state->num_tuples = 0;
         }
     }
@@ -187,6 +214,7 @@ int create_labels_from_csv_file(char *file_path,
     if (!OidIsValid(temp_table_relid))
     {
         setup_temp_table_for_vertex_ids(graph_name);
+        temp_table_relid = RelnameGetRelid(GET_TEMP_VERTEX_ID_TABLE(graph_name));
     }
 
     csv_set_space_func(&p, is_space);
@@ -216,8 +244,10 @@ int create_labels_from_csv_file(char *file_path,
     cr.label_seq_relid = get_relname_relid(label_seq_name, graph_oid);
     cr.load_as_agtype = load_as_agtype;
     cr.temp_table_relid = temp_table_relid;
+    cr.curr_seq_num = nextval_internal(cr.label_seq_relid, true);
 
-    init_batch_insert(&cr.batch_state, label_name, graph_oid);
+    init_vertex_batch_insert(&cr.batch_state, label_name, graph_oid,
+                             cr.temp_table_relid);
 
     while ((bytes_read=fread(buf, 1, 1024, fp)) > 0)
     {
@@ -232,7 +262,8 @@ int create_labels_from_csv_file(char *file_path,
     csv_fini(&p, vertex_field_cb, vertex_row_cb, &cr);
 
     // Finish any remaining batch inserts
-    finish_batch_insert(&cr.batch_state, label_name, graph_oid);
+    finish_vertex_batch_insert(&cr.batch_state, label_name, graph_oid,
+                               cr.temp_table_relid);
 
     if (ferror(fp))
     {
@@ -262,9 +293,9 @@ static void setup_temp_table_for_vertex_ids(char *graph_name)
     char *index_query;
 
     create_as_query = psprintf("CREATE TEMP TABLE IF NOT EXISTS %s AS "
-                     "SELECT DISTINCT id FROM %s.%s",
-                     GET_TEMP_VERTEX_ID_TABLE(graph_name), graph_name,
-                     AG_DEFAULT_LABEL_VERTEX);
+                               "SELECT DISTINCT id FROM \"%s\".%s",
+                                GET_TEMP_VERTEX_ID_TABLE(graph_name), graph_name,
+                                AG_DEFAULT_LABEL_VERTEX);
 
     index_query = psprintf("CREATE UNIQUE INDEX ON %s (id)",
                            GET_TEMP_VERTEX_ID_TABLE(graph_name));
@@ -273,4 +304,139 @@ static void setup_temp_table_for_vertex_ids(char *graph_name)
     SPI_execute(index_query, false, 0);
 
     SPI_finish();
+}
+
+static void insert_batch_in_temp_table(batch_insert_state *batch_state,
+                                       Oid graph_oid, Oid relid)
+{
+    int i;
+    EState *estate;
+    ResultRelInfo *resultRelInfo;
+    BulkInsertState bistate;
+    Relation rel;
+    List *result;
+
+    rel = table_open(relid, RowExclusiveLock);
+
+    // Initialize executor state
+    estate = CreateExecutorState();
+
+    // Initialize result relation information
+    resultRelInfo = makeNode(ResultRelInfo);
+    InitResultRelInfo(resultRelInfo, rel, 1, NULL, estate->es_instrument);
+    estate->es_result_relations = &resultRelInfo;
+
+    ExecOpenIndices(resultRelInfo, false);
+
+    // Prepare the BulkInsertState
+    bistate = GetBulkInsertState();
+    table_multi_insert(rel, batch_state->temp_id_slots, batch_state->num_tuples,
+                       GetCurrentCommandId(true), 0, bistate);
+
+    for (i = 0; i < batch_state->num_tuples; i++)
+    {
+        result = ExecInsertIndexTuples(resultRelInfo, batch_state->temp_id_slots[i],
+                                       estate, false, true, NULL, NIL, false);
+        // Check if the unique cnstraint is violated
+        if (list_length(result) != 0)
+        {
+            Datum id;
+            bool isnull;
+
+            id = slot_getattr(batch_state->temp_id_slots[i], 1, &isnull);
+            ereport(ERROR, (errmsg("Cannot insert duplicate vertex id: %ld",
+                                    DATUM_GET_GRAPHID(id)),
+                            errhint("Entry id %ld is already used",
+                                    get_graphid_entry_id(id))));
+        }
+    }
+    ExecCloseIndices(resultRelInfo);
+
+    FreeExecutorState(estate);
+    FreeBulkInsertState(bistate);
+    table_close(rel, RowExclusiveLock);
+
+    CommandCounterIncrement();
+}
+
+static void init_vertex_batch_insert(batch_insert_state **batch_state,
+                                     char *label_name, Oid graph_oid,
+                                     Oid temp_table_relid)
+{
+    Relation relation;
+    Oid relid;
+
+    Relation temp_table_relation;
+    int i;
+
+    // Open a temporary relation to get the tuple descriptor
+    relid = get_label_relation(label_name, graph_oid);
+    relation = table_open(relid, AccessShareLock);
+
+    temp_table_relation = table_open(temp_table_relid, AccessShareLock);
+
+    // Initialize the batch insert state
+    *batch_state = (batch_insert_state *) palloc0(sizeof(batch_insert_state));
+    (*batch_state)->max_tuples = BATCH_SIZE;
+    (*batch_state)->slots = palloc(sizeof(TupleTableSlot *) * BATCH_SIZE);
+    (*batch_state)->temp_id_slots = palloc(sizeof(TupleTableSlot *) * BATCH_SIZE);
+    (*batch_state)->num_tuples = 0;
+
+    // Create slots
+    for (i = 0; i < BATCH_SIZE; i++)
+    {
+        (*batch_state)->slots[i] = MakeSingleTupleTableSlot(
+                                            RelationGetDescr(relation),
+                                            &TTSOpsHeapTuple);
+        (*batch_state)->temp_id_slots[i] = MakeSingleTupleTableSlot(
+                                        RelationGetDescr(temp_table_relation),
+                                        &TTSOpsHeapTuple);
+    }
+
+    table_close(relation, AccessShareLock);
+    table_close(temp_table_relation, AccessShareLock);
+}
+
+static void finish_vertex_batch_insert(batch_insert_state **batch_state,
+                                       char *label_name, Oid graph_oid,
+                                       Oid temp_table_relid)
+{
+    Relation relation;
+    Oid relid;
+
+    Relation temp_table_relation;
+    int i;
+
+    if ((*batch_state)->num_tuples > 0)
+    {
+        insert_vertex_batch(*batch_state, label_name, graph_oid, temp_table_relid);
+        (*batch_state)->num_tuples = 0;
+    }
+
+    // Open a temporary relation to ensure resources are properly cleaned up
+    relid = get_label_relation(label_name, graph_oid);
+    relation = table_open(relid, AccessShareLock);
+
+    temp_table_relation = table_open(temp_table_relid, AccessShareLock);
+
+    // Free the batch state memory
+    for (i = 0; i < BATCH_SIZE; i++)
+    {
+        ExecDropSingleTupleTableSlot((*batch_state)->slots[i]);
+        ExecDropSingleTupleTableSlot((*batch_state)->temp_id_slots[i]);
+    }
+    pfree((*batch_state)->slots);
+    pfree((*batch_state)->temp_id_slots);
+    pfree(*batch_state);
+    *batch_state = NULL;
+
+    table_close(relation, AccessShareLock);
+    table_close(temp_table_relation, AccessShareLock);
+}
+
+static void insert_vertex_batch(batch_insert_state *batch_state, char *label_name,
+                                Oid graph_oid, Oid temp_table_relid)
+{
+    insert_batch_in_temp_table(batch_state, graph_oid, temp_table_relid);
+    insert_batch(batch_state, label_name, graph_oid);
 }
