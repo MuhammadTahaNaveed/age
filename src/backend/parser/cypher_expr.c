@@ -30,6 +30,8 @@
 #include "parser/parse_coerce.h"
 #include "parser/parse_collate.h"
 #include "parser/parse_func.h"
+#include "parser/parse_expr.h"
+#include "parser/parse_type.h"
 #include "parser/cypher_clause.h"
 #include "parser/parse_oper.h"
 #include "parser/parse_relation.h"
@@ -52,6 +54,19 @@
 #define FUNC_AGTYPE_TYPECAST_PG_FLOAT8 "agtype_to_float8"
 #define FUNC_AGTYPE_TYPECAST_PG_BIGINT "agtype_to_int8"
 #define FUNC_AGTYPE_TYPECAST_BOOL "agtype_typecast_bool"
+
+// create a list of function names
+static const char *pgvector_funcs[] = {
+    "cosine_distance",
+    "l2_normalize",
+    "l2_distance"
+};
+static List *cast_extension_func_args(cypher_parsestate *cpstate, List *targs,
+                                      char *extension);
+static bool is_pgvector_func(char *name);
+static char *get_mapped_extension(char *name);
+static Node *coerce_if_possible(ParseState *pstate, Node *expr, Oid target_type);
+static Node *cast_agtype_to_vector(ParseState *pstate, Node *expr);
 
 static Node *transform_cypher_expr_recurse(cypher_parsestate *cpstate,
                                            Node *expr);
@@ -94,6 +109,7 @@ static Node *transform_column_ref_for_indirection(cypher_parsestate *cpstate,
                                                   ColumnRef *cr);
 static Node *transform_cypher_list_comprehension(cypher_parsestate *cpstate,
                                                  cypher_unwind *expr);
+static Node *coerce_if_possible(ParseState *pstate, Node *expr, Oid target_type);
 
 /* transform a cypher expression */
 Node *transform_cypher_expr(cypher_parsestate *cpstate, Node *expr,
@@ -234,7 +250,6 @@ static Node *transform_cypher_expr_recurse(cypher_parsestate *cpstate,
         return transform_FuncCall(cpstate, (FuncCall *)expr);
     case T_SubLink:
         return transform_SubLink(cpstate, (SubLink *)expr);
-        break;
     default:
         ereport(ERROR, (errmsg_internal("unrecognized node type: %d",
                                         nodeTag(expr))));
@@ -1538,6 +1553,7 @@ static Node *transform_cypher_typecast(cypher_parsestate *cpstate,
 {
     List *fname;
     FuncCall *fnode;
+    ParseState *pstate = &cpstate->pstate;
 
     /* verify input parameter */
     Assert (cpstate != NULL);
@@ -1585,6 +1601,15 @@ static Node *transform_cypher_typecast(cypher_parsestate *cpstate,
     {
         fname = lappend(fname, makeString(FUNC_AGTYPE_TYPECAST_BOOL));
     }
+    else if (pg_strcasecmp(ctypecast->typecast, "vector") == 0)
+    {
+        Node *expr = ctypecast->expr;
+        
+        expr = transform_cypher_expr_recurse(cpstate, expr);
+	    expr = cast_agtype_to_vector(pstate, expr);
+
+        return expr;
+    }
     /* if none was found, error out */
     else
     {
@@ -1601,6 +1626,93 @@ static Node *transform_cypher_typecast(cypher_parsestate *cpstate,
     return transform_FuncCall(cpstate, fnode);
 }
 
+/* check if function is from pgvector */
+static bool is_pgvector_func(char *name)
+{
+    int i;
+
+    for (i = 0; i < sizeof(pgvector_funcs) / sizeof(pgvector_funcs[0]); i++)
+    {
+        if (strcmp(pgvector_funcs[i], name) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* given function name, returns extension name it belongs to */
+static char *get_mapped_extension(char *name)
+{
+    if (is_pgvector_func(name))
+    {
+        return "vector";
+    }
+
+    return NULL;
+}
+
+/* try to coerce to target type, else error out */
+static Node *coerce_if_possible(ParseState *pstate, Node *expr, Oid target_type)
+{
+    Oid input_type = exprType(expr);
+
+    if (can_coerce_type(1, &input_type, &target_type, COERCION_EXPLICIT))
+    {
+        expr = coerce_type(pstate, expr, input_type, target_type, -1,
+                           COERCION_EXPLICIT, COERCE_EXPLICIT_CAST, -1);
+    }
+    else
+    {
+        ereport(ERROR,
+                (errcode(ERRCODE_UNDEFINED_FUNCTION),
+                    errmsg("cannot cast type %s to %s",
+                        format_type_be(input_type), format_type_be(target_type))));
+    }
+
+    return expr;
+}
+
+/* cast agtype to vector */
+static Node *cast_agtype_to_vector(ParseState *pstate, Node *expr)
+{
+    Oid	target_type;
+    TypeName *target_type_name;
+
+    /* coerce agtype to text */
+    expr = coerce_if_possible(pstate, expr, TEXTOID);
+
+    /* coerce text to vector */
+    target_type_name = makeTypeNameFromNameList(
+                                list_make1(makeString("vector")));
+    target_type = typenameTypeId(pstate, target_type_name);
+    expr = coerce_if_possible(pstate, expr, target_type);
+
+    return expr;
+}
+
+static List *cast_extension_func_args(cypher_parsestate *cpstate, List *targs,
+                                      char *extension)
+{
+    ListCell *arg;
+    ParseState *pstate = &cpstate->pstate;
+
+    foreach(arg, targs)
+    {
+        Node *farg = (Node *)lfirst(arg);
+
+        if (pg_strcasecmp(extension, "vector") == 0)
+            lfirst(arg) = cast_agtype_to_vector(pstate, farg);
+        else
+            ereport(ERROR,
+                    (errcode(ERRCODE_UNDEFINED_FUNCTION),
+                     errmsg("unknown extension function %s", extension)));
+    }
+
+    return targs;
+}
+
 /*
  * Code borrowed from PG's transformFuncCall and updated for AGE
  */
@@ -1612,7 +1724,11 @@ static Node *transform_FuncCall(cypher_parsestate *cpstate, FuncCall *fn)
     List *fname = NIL;
     ListCell *arg;
     Node *retval = NULL;
+    char *name;
+    char *extension;
 
+    name = ((String*)linitial(fn->funcname))->sval;
+    
     /* Transform the list of arguments ... */
     foreach(arg, fn->args)
     {
@@ -1625,14 +1741,20 @@ static Node *transform_FuncCall(cypher_parsestate *cpstate, FuncCall *fn)
     /* within group should not happen */
     Assert(!fn->agg_within_group);
 
+    /* check if function is from another extension */
+    extension = get_mapped_extension(name);
+    if (extension != NULL)
+    {
+        fname = fn->funcname;
+        targs = cast_extension_func_args(cpstate, targs, extension);
+    }
     /*
      * If the function name is not qualified, then it is one of ours. We need to
      * construct its name, and qualify it, so that PG can find it.
      */
-    if (list_length(fn->funcname) == 1)
+    else if (list_length(fn->funcname) == 1)
     {
         /* get the name, size, and the ag name allocated */
-        char *name = ((String*)linitial(fn->funcname))->sval;
         int pnlen = strlen(name);
         char *ag_name = palloc(pnlen + 5);
         int i;
