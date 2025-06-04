@@ -13,8 +13,5 @@ PG14:
 PG15:
 - base-branch: 'PG15'
 
-PG17_stable:
-- base-branch: 'PG17'
-
 master:
 - base-branch: 'master'
