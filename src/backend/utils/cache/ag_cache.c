@@ -108,6 +108,38 @@ static ScanKeyData label_relation_scan_keys[1];
 static HTAB *label_seq_name_graph_cache_hash = NULL;
 static ScanKeyData label_seq_name_graph_scan_keys[2];
 
+/* ag_graph_schema - per edge label: (graph, edge_label_id) -> entries */
+typedef struct edge_schema_cache_key
+{
+    Oid graph;
+    int32 edge_label_id;
+} edge_schema_cache_key;
+
+typedef struct edge_schema_cache_entry
+{
+    edge_schema_cache_key key;  /* hash key */
+    edge_schema_cache_data data;
+} edge_schema_cache_entry;
+
+static HTAB *edge_schema_cache_hash = NULL;
+static ScanKeyData edge_schema_scan_keys[2];
+
+/* start_vertex -> end_labels cache: (graph, start_label_id) -> end_label_ids */
+typedef struct vertex_labels_cache_key
+{
+    Oid graph;
+    int32 vertex_label_id;
+} vertex_labels_cache_key;
+
+typedef struct vertex_labels_cache_entry
+{
+    vertex_labels_cache_key key;  /* hash key */
+    vertex_edge_labels_cache_data data;
+} vertex_labels_cache_entry;
+
+static HTAB *start_vertex_end_labels_cache_hash = NULL;
+static HTAB *end_vertex_start_labels_cache_hash = NULL;
+
 /* initialize all caches */
 static void initialize_caches(void);
 
@@ -166,6 +198,18 @@ static void *label_seq_name_graph_cache_hash_search(Name name, Oid graph,
 static void fill_label_cache_data(label_cache_data *cache_data,
                                   HeapTuple tuple, TupleDesc tuple_desc);
 
+/* ag_graph_schema caches */
+static void initialize_edge_schema_caches(void);
+static void create_edge_schema_cache(void);
+static void create_start_vertex_end_labels_cache(void);
+static void create_end_vertex_start_labels_cache(void);
+static void flush_edge_schema_cache(void);
+static void flush_start_vertex_end_labels_cache(void);
+static void flush_end_vertex_start_labels_cache(void);
+static edge_schema_cache_data *search_edge_schema_cache_miss(Oid graph, int32 edge_label_id);
+static vertex_edge_labels_cache_data *search_start_vertex_end_labels_cache_miss(Oid graph, int32 start_label_id);
+static vertex_edge_labels_cache_data *search_end_vertex_start_labels_cache_miss(Oid graph, int32 end_label_id);
+
 static void initialize_caches(void)
 {
     static bool initialized = false;
@@ -180,6 +224,7 @@ static void initialize_caches(void)
     }
     initialize_graph_caches();
     initialize_label_caches();
+    initialize_edge_schema_caches();
 
     initialized = true;
 }
@@ -1129,4 +1174,437 @@ static void fill_label_cache_data(label_cache_data *cache_data,
     value = heap_getattr(tuple, Anum_ag_label_seq_name, tuple_desc, &is_null);
     Assert(!is_null);
     namestrcpy(&cache_data->seq_name, DatumGetName(value)->data);
+}
+
+/*
+ * Edge Schema Cache Implementation
+ *
+ * Three separate caches for efficient lookups:
+ * 1. edge_schema_cache: (graph, edge_label_id) -> (start_label_id, end_label_id) pairs
+ * 2. start_vertex_end_labels_cache: (graph, start_label_id) -> list of end_label_ids
+ * 3. end_vertex_start_labels_cache: (graph, end_label_id) -> list of start_label_ids
+ */
+
+static void initialize_edge_schema_caches(void)
+{
+    /* ag_graph_schema.graph, ag_graph_schema.edge_label_id */
+    ag_cache_scan_key_init(&edge_schema_scan_keys[0],
+                           Anum_ag_graph_schema_graph, F_OIDEQ);
+    ag_cache_scan_key_init(&edge_schema_scan_keys[1],
+                           Anum_ag_graph_schema_edge_label_id, F_INT4EQ);
+
+    create_edge_schema_cache();
+    create_start_vertex_end_labels_cache();
+    create_end_vertex_start_labels_cache();
+}
+
+static void create_edge_schema_cache(void)
+{
+    HASHCTL hash_ctl;
+
+    MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+    hash_ctl.keysize = sizeof(edge_schema_cache_key);
+    hash_ctl.entrysize = sizeof(edge_schema_cache_entry);
+
+    edge_schema_cache_hash = hash_create("ag_graph_schema (graph, edge_label_id) cache",
+                                         16, &hash_ctl,
+                                         HASH_ELEM | HASH_BLOBS);
+}
+
+static void create_start_vertex_end_labels_cache(void)
+{
+    HASHCTL hash_ctl;
+
+    MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+    hash_ctl.keysize = sizeof(vertex_labels_cache_key);
+    hash_ctl.entrysize = sizeof(vertex_labels_cache_entry);
+
+    start_vertex_end_labels_cache_hash = hash_create("ag_graph_schema start->end labels cache",
+                                                     16, &hash_ctl,
+                                                     HASH_ELEM | HASH_BLOBS);
+}
+
+static void create_end_vertex_start_labels_cache(void)
+{
+    HASHCTL hash_ctl;
+
+    MemSet(&hash_ctl, 0, sizeof(hash_ctl));
+    hash_ctl.keysize = sizeof(vertex_labels_cache_key);
+    hash_ctl.entrysize = sizeof(vertex_labels_cache_entry);
+
+    end_vertex_start_labels_cache_hash = hash_create("ag_graph_schema end->start labels cache",
+                                                     16, &hash_ctl,
+                                                     HASH_ELEM | HASH_BLOBS);
+}
+
+static void flush_edge_schema_cache(void)
+{
+    HASH_SEQ_STATUS hash_seq;
+    edge_schema_cache_entry *entry;
+
+    if (!edge_schema_cache_hash)
+        return;
+
+    /* Free the entries array in each cached entry before destroying hash */
+    hash_seq_init(&hash_seq, edge_schema_cache_hash);
+    while ((entry = hash_seq_search(&hash_seq)) != NULL)
+    {
+        if (entry->data.entries != NULL)
+        {
+            pfree(entry->data.entries);
+            entry->data.entries = NULL;
+        }
+    }
+
+    hash_destroy(edge_schema_cache_hash);
+    edge_schema_cache_hash = NULL;
+    create_edge_schema_cache();
+}
+
+static void flush_start_vertex_end_labels_cache(void)
+{
+    HASH_SEQ_STATUS hash_seq;
+    vertex_labels_cache_entry *entry;
+
+    if (!start_vertex_end_labels_cache_hash)
+        return;
+
+    hash_seq_init(&hash_seq, start_vertex_end_labels_cache_hash);
+    while ((entry = hash_seq_search(&hash_seq)) != NULL)
+    {
+        if (entry->data.label_ids != NULL)
+        {
+            pfree(entry->data.label_ids);
+            entry->data.label_ids = NULL;
+        }
+    }
+
+    hash_destroy(start_vertex_end_labels_cache_hash);
+    start_vertex_end_labels_cache_hash = NULL;
+    create_start_vertex_end_labels_cache();
+}
+
+static void flush_end_vertex_start_labels_cache(void)
+{
+    HASH_SEQ_STATUS hash_seq;
+    vertex_labels_cache_entry *entry;
+
+    if (!end_vertex_start_labels_cache_hash)
+        return;
+
+    hash_seq_init(&hash_seq, end_vertex_start_labels_cache_hash);
+    while ((entry = hash_seq_search(&hash_seq)) != NULL)
+    {
+        if (entry->data.label_ids != NULL)
+        {
+            pfree(entry->data.label_ids);
+            entry->data.label_ids = NULL;
+        }
+    }
+
+    hash_destroy(end_vertex_start_labels_cache_hash);
+    end_vertex_start_labels_cache_hash = NULL;
+    create_end_vertex_start_labels_cache();
+}
+
+/*
+ * Invalidate all edge schema caches for a specific graph.
+ * Called when edge schema entries are modified (insert/delete).
+ */
+void invalidate_edge_schema_caches_for_graph(Oid graph)
+{
+    /* For simplicity, flush all caches when any graph's schema changes */
+    /* A more sophisticated implementation could track per-graph entries */
+    if (edge_schema_cache_hash)
+        flush_edge_schema_cache();
+    if (start_vertex_end_labels_cache_hash)
+        flush_start_vertex_end_labels_cache();
+    if (end_vertex_start_labels_cache_hash)
+        flush_end_vertex_start_labels_cache();
+}
+
+/*
+ * Search edge schema cache by (graph, edge_label_id).
+ */
+edge_schema_cache_data *search_edge_schema_cache(Oid graph, int32 edge_label_id)
+{
+    edge_schema_cache_key key;
+    edge_schema_cache_entry *entry;
+    bool found;
+
+    initialize_caches();
+
+    key.graph = graph;
+    key.edge_label_id = edge_label_id;
+
+    entry = hash_search(edge_schema_cache_hash, &key, HASH_FIND, &found);
+    if (found && entry)
+    {
+        return &entry->data;
+    }
+
+    return search_edge_schema_cache_miss(graph, edge_label_id);
+}
+
+static edge_schema_cache_data *search_edge_schema_cache_miss(Oid graph, int32 edge_label_id)
+{
+    ScanKeyData scan_keys[2];
+    Relation ag_graph_schema;
+    TableScanDesc scan_desc;
+    HeapTuple tuple;
+    bool found;
+    edge_schema_cache_key key;
+    edge_schema_cache_entry *entry;
+    List *entries_list = NIL;
+    ListCell *lc;
+    int i;
+    TupleDesc tupdesc;
+
+    memcpy(scan_keys, edge_schema_scan_keys, sizeof(edge_schema_scan_keys));
+    scan_keys[0].sk_argument = ObjectIdGetDatum(graph);
+    scan_keys[1].sk_argument = Int32GetDatum(edge_label_id);
+
+    ag_graph_schema = table_open(ag_graph_schema_relation_id(), AccessShareLock);
+    tupdesc = RelationGetDescr(ag_graph_schema);
+    scan_desc = table_beginscan_catalog(ag_graph_schema, 2, scan_keys);
+
+    while ((tuple = heap_getnext(scan_desc, ForwardScanDirection)) != NULL)
+    {
+        edge_schema_entry *schema_entry;
+        bool isnull;
+
+        schema_entry = MemoryContextAlloc(CacheMemoryContext,
+                                          sizeof(edge_schema_entry));
+
+        schema_entry->start_label_id = DatumGetInt32(
+            heap_getattr(tuple, Anum_ag_graph_schema_start_label_id, tupdesc, &isnull));
+        schema_entry->end_label_id = DatumGetInt32(
+            heap_getattr(tuple, Anum_ag_graph_schema_end_label_id, tupdesc, &isnull));
+
+        entries_list = lappend(entries_list, schema_entry);
+    }
+
+    table_endscan(scan_desc);
+    table_close(ag_graph_schema, AccessShareLock);
+
+    /* Get a new cache entry */
+    key.graph = graph;
+    key.edge_label_id = edge_label_id;
+    entry = hash_search(edge_schema_cache_hash, &key, HASH_ENTER, &found);
+    Assert(!found);
+
+    /* Fill the cache entry */
+    entry->data.graph = graph;
+    entry->data.edge_label_id = edge_label_id;
+    entry->data.num_entries = list_length(entries_list);
+
+    if (entry->data.num_entries > 0)
+    {
+        entry->data.entries = MemoryContextAlloc(CacheMemoryContext,
+                                                  sizeof(edge_schema_entry) * entry->data.num_entries);
+        i = 0;
+        foreach(lc, entries_list)
+        {
+            edge_schema_entry *src = (edge_schema_entry *) lfirst(lc);
+            entry->data.entries[i] = *src;
+            pfree(src);
+            i++;
+        }
+    }
+    else
+    {
+        entry->data.entries = NULL;
+    }
+
+    list_free(entries_list);
+
+    return &entry->data;
+}
+
+/*
+ * Search start_vertex -> end_labels cache.
+ */
+vertex_edge_labels_cache_data *search_start_vertex_end_labels_cache(Oid graph, int32 start_label_id)
+{
+    vertex_labels_cache_key key;
+    vertex_labels_cache_entry *entry;
+    bool found;
+
+    initialize_caches();
+
+    key.graph = graph;
+    key.vertex_label_id = start_label_id;
+
+    entry = hash_search(start_vertex_end_labels_cache_hash, &key, HASH_FIND, &found);
+    if (found && entry)
+    {
+        return &entry->data;
+    }
+
+    return search_start_vertex_end_labels_cache_miss(graph, start_label_id);
+}
+
+static vertex_edge_labels_cache_data *search_start_vertex_end_labels_cache_miss(Oid graph, int32 start_label_id)
+{
+    ScanKeyData scan_keys[2];
+    Relation ag_graph_schema;
+    TableScanDesc scan_desc;
+    HeapTuple tuple;
+    bool found;
+    vertex_labels_cache_key key;
+    vertex_labels_cache_entry *entry;
+    List *label_ids_list = NIL;
+    ListCell *lc;
+    int i;
+    TupleDesc tupdesc;
+
+    ScanKeyInit(&scan_keys[0], Anum_ag_graph_schema_graph, BTEqualStrategyNumber,
+                F_OIDEQ, ObjectIdGetDatum(graph));
+    ScanKeyInit(&scan_keys[1], Anum_ag_graph_schema_start_label_id, BTEqualStrategyNumber,
+                F_INT4EQ, Int32GetDatum(start_label_id));
+
+    ag_graph_schema = table_open(ag_graph_schema_relation_id(), AccessShareLock);
+    tupdesc = RelationGetDescr(ag_graph_schema);
+    scan_desc = table_beginscan_catalog(ag_graph_schema, 2, scan_keys);
+
+    while ((tuple = heap_getnext(scan_desc, ForwardScanDirection)) != NULL)
+    {
+        bool isnull;
+        int32 end_label_id;
+
+        end_label_id = DatumGetInt32(
+            heap_getattr(tuple, Anum_ag_graph_schema_end_label_id, tupdesc, &isnull));
+
+        /* Dedup */
+        if (!list_member_int(label_ids_list, end_label_id))
+            label_ids_list = lappend_int(label_ids_list, end_label_id);
+    }
+
+    table_endscan(scan_desc);
+    table_close(ag_graph_schema, AccessShareLock);
+
+    /* Get a new cache entry */
+    key.graph = graph;
+    key.vertex_label_id = start_label_id;
+    entry = hash_search(start_vertex_end_labels_cache_hash, &key, HASH_ENTER, &found);
+    Assert(!found);
+
+    /* Fill the cache entry */
+    entry->data.graph = graph;
+    entry->data.vertex_label_id = start_label_id;
+    entry->data.num_label_ids = list_length(label_ids_list);
+
+    if (entry->data.num_label_ids > 0)
+    {
+        entry->data.label_ids = MemoryContextAlloc(CacheMemoryContext,
+                                                    sizeof(int32) * entry->data.num_label_ids);
+        i = 0;
+        foreach(lc, label_ids_list)
+        {
+            entry->data.label_ids[i] = lfirst_int(lc);
+            i++;
+        }
+    }
+    else
+    {
+        entry->data.label_ids = NULL;
+    }
+
+    list_free(label_ids_list);
+
+    return &entry->data;
+}
+
+/*
+ * Search end_vertex -> start_labels cache.
+ */
+vertex_edge_labels_cache_data *search_end_vertex_start_labels_cache(Oid graph, int32 end_label_id)
+{
+    vertex_labels_cache_key key;
+    vertex_labels_cache_entry *entry;
+    bool found;
+
+    initialize_caches();
+
+    key.graph = graph;
+    key.vertex_label_id = end_label_id;
+
+    entry = hash_search(end_vertex_start_labels_cache_hash, &key, HASH_FIND, &found);
+    if (found && entry)
+    {
+        return &entry->data;
+    }
+
+    return search_end_vertex_start_labels_cache_miss(graph, end_label_id);
+}
+
+static vertex_edge_labels_cache_data *search_end_vertex_start_labels_cache_miss(Oid graph, int32 end_label_id)
+{
+    ScanKeyData scan_keys[2];
+    Relation ag_graph_schema;
+    TableScanDesc scan_desc;
+    HeapTuple tuple;
+    bool found;
+    vertex_labels_cache_key key;
+    vertex_labels_cache_entry *entry;
+    List *label_ids_list = NIL;
+    ListCell *lc;
+    int i;
+    TupleDesc tupdesc;
+
+    ScanKeyInit(&scan_keys[0], Anum_ag_graph_schema_graph, BTEqualStrategyNumber,
+                F_OIDEQ, ObjectIdGetDatum(graph));
+    ScanKeyInit(&scan_keys[1], Anum_ag_graph_schema_end_label_id, BTEqualStrategyNumber,
+                F_INT4EQ, Int32GetDatum(end_label_id));
+
+    ag_graph_schema = table_open(ag_graph_schema_relation_id(), AccessShareLock);
+    tupdesc = RelationGetDescr(ag_graph_schema);
+    scan_desc = table_beginscan_catalog(ag_graph_schema, 2, scan_keys);
+
+    while ((tuple = heap_getnext(scan_desc, ForwardScanDirection)) != NULL)
+    {
+        bool isnull;
+        int32 start_label_id;
+
+        start_label_id = DatumGetInt32(
+            heap_getattr(tuple, Anum_ag_graph_schema_start_label_id, tupdesc, &isnull));
+
+        /* Dedup */
+        if (!list_member_int(label_ids_list, start_label_id))
+            label_ids_list = lappend_int(label_ids_list, start_label_id);
+    }
+
+    table_endscan(scan_desc);
+    table_close(ag_graph_schema, AccessShareLock);
+
+    /* Get a new cache entry */
+    key.graph = graph;
+    key.vertex_label_id = end_label_id;
+    entry = hash_search(end_vertex_start_labels_cache_hash, &key, HASH_ENTER, &found);
+    Assert(!found);
+
+    /* Fill the cache entry */
+    entry->data.graph = graph;
+    entry->data.vertex_label_id = end_label_id;
+    entry->data.num_label_ids = list_length(label_ids_list);
+
+    if (entry->data.num_label_ids > 0)
+    {
+        entry->data.label_ids = MemoryContextAlloc(CacheMemoryContext,
+                                                    sizeof(int32) * entry->data.num_label_ids);
+        i = 0;
+        foreach(lc, label_ids_list)
+        {
+            entry->data.label_ids[i] = lfirst_int(lc);
+            i++;
+        }
+    }
+    else
+    {
+        entry->data.label_ids = NULL;
+    }
+
+    list_free(label_ids_list);
+
+    return &entry->data;
 }

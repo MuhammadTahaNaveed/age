@@ -76,6 +76,32 @@ CREATE UNIQUE INDEX ag_label_seq_name_graph_index
     USING btree (seq_name, graph);
 
 --
+-- Graph schema tracking for traversal optimizations
+--
+CREATE TABLE ag_graph_schema (
+    graph           oid NOT NULL,
+    edge_label_id   label_id NOT NULL,
+    start_label_id  label_id NOT NULL,
+    end_label_id    label_id NOT NULL,
+    CONSTRAINT fk_graph
+        FOREIGN KEY(graph)
+            REFERENCES ag_graph(graphid) ON DELETE CASCADE
+);
+
+-- Primary key: one row per (graph, edge, start, end) combination
+CREATE UNIQUE INDEX ag_graph_schema_pkey
+    ON ag_graph_schema
+    USING btree (graph, edge_label_id, start_label_id, end_label_id);
+
+-- Fast lookup by edge label within a graph
+CREATE INDEX ag_graph_schema_edge_idx
+    ON ag_graph_schema
+    USING btree (graph, edge_label_id);
+
+-- Include in pg_dump
+SELECT pg_catalog.pg_extension_config_dump('ag_graph_schema', '');
+
+--
 -- catalog lookup functions
 --
 

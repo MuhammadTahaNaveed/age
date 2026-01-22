@@ -39,6 +39,14 @@
  */
 extern bool age_enable_containment;
 
+/*
+ * If set true, the query planner will use graph schema information from
+ * ag_graph_schema to infer labels for unlabeled vertices and edges in
+ * MATCH patterns. This can significantly reduce the number of tables
+ * scanned during graph traversal.
+ */
+extern bool age_infer_labels;
+
 void define_config_params(void);
 
 #endif

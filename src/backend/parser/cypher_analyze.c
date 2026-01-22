@@ -29,6 +29,7 @@
 #include "utils/builtins.h"
 
 #include "catalog/ag_graph.h"
+#include "optimizer/cypher_graph_opt.h"
 #include "parser/cypher_analyze.h"
 #include "parser/cypher_clause.h"
 #include "parser/cypher_parser.h"
@@ -919,6 +920,13 @@ static Query *analyze_cypher(List *stmt, ParseState *parent_pstate,
     ParseState *pstate;
     errpos_ecb_state ecb_state;
     Query *query;
+
+    /*
+     * Initialize the graph optimization context at the start of each
+     * cypher query. This clears any stale inferred labels from previous
+     * queries.
+     */
+    graph_opt_context_init();
 
     /*
      * Since the first clause in stmt is the innermost subquery, the order of

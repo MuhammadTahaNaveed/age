@@ -22,6 +22,7 @@
 #include "catalog/ag_label.h"
 #include "executor/cypher_executor.h"
 #include "executor/cypher_utils.h"
+#include "utils/graphid.h"
 
 static void begin_cypher_create(CustomScanState *node, EState *estate,
                                 int eflags);
@@ -406,6 +407,24 @@ static void create_edge(cypher_create_custom_scan_state *css,
 
     /* Insert the new edge */
     insert_entity_tuple(resultRelInfo, elemTupleSlot, estate);
+
+    /*
+     * Track edge schema: record which vertex labels this edge label connects.
+     * Extract label_ids from the graphids and check if this combination
+     * is already recorded. If not, insert a new schema entry.
+     */
+    {
+        int32 edge_label_id = get_graphid_label_id(DatumGetInt64(id));
+        int32 start_label_id = get_graphid_label_id(DatumGetInt64(start_id));
+        int32 end_label_id = get_graphid_label_id(DatumGetInt64(end_id));
+
+        if (!edge_schema_entry_exists(css->graph_oid, edge_label_id,
+                                       start_label_id, end_label_id))
+        {
+            insert_edge_schema_entry(css->graph_oid, edge_label_id,
+                                      start_label_id, end_label_id);
+        }
+    }
 
     /* restore the old result relation info */
     estate->es_result_relations = old_estate_es_result_relations;

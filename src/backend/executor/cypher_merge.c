@@ -23,6 +23,7 @@
 #include "executor/cypher_executor.h"
 #include "executor/cypher_utils.h"
 #include "utils/datum.h"
+#include "utils/graphid.h"
 
 /*
  * The following structure is used to hold a single vertex or edge component
@@ -1442,6 +1443,26 @@ static void merge_edge(cypher_merge_custom_scan_state *css,
     {
         insert_entity_tuple_cid(resultRelInfo, elemTupleSlot, estate,
                                     css->base_currentCommandId);
+    }
+
+    /*
+     * Track this edge's (start_label, edge_label, end_label) combination
+     * in the ag_graph_schema catalog for label inference optimization.
+     * Only do this when we actually inserted a new edge.
+     */
+    if (should_insert)
+    {
+        int32 start_label_id = get_graphid_label_id(DATUM_GET_GRAPHID(start_id));
+        int32 end_label_id = get_graphid_label_id(DATUM_GET_GRAPHID(end_id));
+        int32 edge_label_id = get_graphid_label_id(DATUM_GET_GRAPHID(id));
+
+        /* Insert if this combination doesn't exist yet */
+        if (!edge_schema_entry_exists(css->graph_oid, edge_label_id,
+                                       start_label_id, end_label_id))
+        {
+            insert_edge_schema_entry(css->graph_oid, edge_label_id,
+                                      start_label_id, end_label_id);
+        }
     }
 
     /* restore the old result relation info */

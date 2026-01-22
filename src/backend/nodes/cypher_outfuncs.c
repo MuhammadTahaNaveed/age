@@ -219,6 +219,7 @@ void out_cypher_node(StringInfo str, const ExtensibleNode *node)
     WRITE_STRING_FIELD(parsed_label);
     WRITE_NODE_FIELD(props);
     WRITE_LOCATION_FIELD(location);
+    WRITE_NODE_FIELD(inferred_label_ids);
 }
 
 /* serialization function for the cypher_relationship ExtensibleNode. */

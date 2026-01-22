@@ -150,6 +150,7 @@ typedef struct cypher_node
     bool use_equals;
     Node *props; /* map or parameter */
     int location;
+    List *inferred_label_ids; /* Inferred candidate label_ids from edge schema */
 } cypher_node;
 
 typedef enum
@@ -172,6 +173,7 @@ typedef struct cypher_relationship
     Node *varlen; /* variable length relationships (A_Indices) */
     cypher_rel_dir dir;
     int location;
+    List *inferred_label_ids; /* Inferred candidate label_ids from edge schema */
 } cypher_relationship;
 
 /*

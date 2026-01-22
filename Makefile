@@ -35,6 +35,7 @@ OBJS = src/backend/age.o \
        src/backend/nodes/cypher_outfuncs.o \
        src/backend/nodes/cypher_readfuncs.o \
        src/backend/optimizer/cypher_createplan.o \
+       src/backend/optimizer/cypher_graph_opt.o \
        src/backend/optimizer/cypher_pathnode.o \
        src/backend/optimizer/cypher_paths.o \
        src/backend/parser/ag_scanner.o \
@@ -94,6 +95,7 @@ REGRESS = scan \
           expr \
           cypher_create \
           cypher_match \
+          cypher_label_inference \
           cypher_unwind \
           cypher_set \
           cypher_remove \

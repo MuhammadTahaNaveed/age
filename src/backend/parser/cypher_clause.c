@@ -42,6 +42,7 @@
 #include "catalog/ag_graph.h"
 #include "catalog/ag_label.h"
 #include "commands/label_commands.h"
+#include "optimizer/cypher_graph_opt.h"
 #include "parser/cypher_analyze.h"
 #include "parser/cypher_clause.h"
 #include "parser/cypher_expr.h"
@@ -118,6 +119,7 @@ static Query *transform_cypher_match_pattern(cypher_parsestate *cpstate,
                                              cypher_clause *clause);
 static List *transform_match_entities(cypher_parsestate *cpstate, Query *query,
                                       cypher_path *path);
+static void infer_labels_in_path(cypher_parsestate *cpstate, cypher_path *path);
 static void transform_match_pattern(cypher_parsestate *cpstate, Query *query,
                                     List *pattern, Node *where);
 static List *transform_match_path(cypher_parsestate *cpstate, Query *query,
@@ -4395,6 +4397,468 @@ static bool path_check_valid_label(cypher_path *path,
 }
 
 /*
+ * infer_labels_in_path
+ *
+ * Pre-pass over the path to infer labels for both unlabeled vertices and
+ * unlabeled edges based on the ag_graph_schema catalog.
+ *
+ * Uses an iterative approach that continues until no new inferences are made:
+ * - Infer edge labels from vertices (explicit OR previously inferred)
+ * - Infer vertex labels from edges (explicit OR previously inferred)
+ *
+ * For example:
+ * - (a:Person)-[:KNOWS]->(b) -> if KNOWS only connects Person->Person, infer b is Person
+ * - (:Person)-[]->(b) -> if only KNOWS edges start from Person, infer edge is KNOWS
+ * - (:Person)-[]->()-[]->() -> first edge inferred, then middle vertex, then second edge, then last vertex
+ *
+ * This optimization eliminates unnecessary UNION scans over all tables
+ * when the schema constrains the possible labels.
+ *
+ * NOTE: This function only works when ag_graph_schema has data for the graph.
+ * For graphs with data created before this feature, no inference is performed.
+ */
+static void infer_labels_in_path(cypher_parsestate *cpstate, cypher_path *path)
+{
+    ListCell *lc;
+    int i = 0;
+    int path_len = list_length(path->path);
+    bool changed;
+    int iteration = 0;
+    const int max_iterations = 10; /* Safety limit */
+
+    /*
+     * Check if ag_graph_schema has any entries for this graph.
+     * If not, skip inference - the schema data is incomplete.
+     */
+    if (!graph_has_edge_schema_entries(cpstate->graph_oid))
+    {
+        return;
+    }
+
+    /*
+     * Check if this path contains VLE edges.
+     * If so, skip inference entirely.
+     */
+    foreach(lc, path->path)
+    {
+        if (i % 2 == 1)
+        {
+            cypher_relationship *rel = lfirst(lc);
+            if (rel->varlen != NULL)
+            {
+                /* VLE edge found, skip inference for this path */
+                return;
+            }
+        }
+        i++;
+    }
+
+    /*
+     * Iteratively infer labels until no more changes are made.
+     * Each iteration tries to infer edge labels from vertex labels,
+     * then vertex labels from edge labels.
+     */
+    do
+    {
+        changed = false;
+        iteration++;
+
+        /*
+         * Step 1: Infer edge labels from vertex labels
+         * (both explicit labels and previously inferred labels)
+         */
+        i = 0;
+        foreach(lc, path->path)
+        {
+            if (i % 2 == 1)
+            {
+                /* Process edge at odd index */
+                cypher_relationship *rel = lfirst(lc);
+
+                /* Only process if not already labeled/inferred */
+                if (rel->label == NULL && rel->inferred_label_ids == NIL)
+                {
+                    List *candidate_edge_ids = NIL;
+                    bool impossible_pattern = false;
+                    cypher_node *left_node = list_nth(path->path, i - 1);
+                    cypher_node *right_node = (i < path_len - 1) 
+                        ? list_nth(path->path, i + 1) : NULL;
+
+                    /* Infer from left node (explicit or inferred label) */
+                    if (left_node != NULL)
+                    {
+                        List *left_vertex_ids = NIL;
+                        bool have_left_constraint = false;
+
+                        if (left_node->label != NULL)
+                        {
+                            label_cache_data *lcd = search_label_name_graph_cache(
+                                left_node->label, cpstate->graph_oid);
+                            if (lcd != NULL && lcd->kind == LABEL_KIND_VERTEX)
+                            {
+                                left_vertex_ids = list_make1_int(lcd->id);
+                                have_left_constraint = true;
+                            }
+                        }
+                        else if (left_node->inferred_label_ids != NIL)
+                        {
+                            left_vertex_ids = list_copy(left_node->inferred_label_ids);
+                            have_left_constraint = true;
+                        }
+
+                        if (left_vertex_ids != NIL)
+                        {
+                            ListCell *vlc;
+                            List *edge_ids_from_left = NIL;
+
+                            foreach(vlc, left_vertex_ids)
+                            {
+                                int32 vid = lfirst_int(vlc);
+                                List *eids = (rel->dir == CYPHER_REL_DIR_LEFT)
+                                    ? get_edge_labels_from_end_vertex(cpstate->graph_oid, vid)
+                                    : get_edge_labels_from_start_vertex(cpstate->graph_oid, vid);
+                                
+                                /* Union edge labels from all vertex possibilities */
+                                if (eids != NIL)
+                                {
+                                    ListCell *elc;
+                                    foreach(elc, eids)
+                                    {
+                                        int32 eid = lfirst_int(elc);
+                                        if (!list_member_int(edge_ids_from_left, eid))
+                                            edge_ids_from_left = lappend_int(edge_ids_from_left, eid);
+                                    }
+                                    list_free(eids);
+                                }
+                            }
+                            list_free(left_vertex_ids);
+
+                            /*
+                             * If we have a left vertex constraint but no edges found,
+                             * this pattern is impossible (no edges connect from/to this vertex type)
+                             */
+                            if (edge_ids_from_left == NIL && have_left_constraint)
+                            {
+                                impossible_pattern = true;
+                            }
+                            else if (edge_ids_from_left != NIL)
+                            {
+                                if (candidate_edge_ids == NIL)
+                                    candidate_edge_ids = edge_ids_from_left;
+                                else
+                                {
+                                    candidate_edge_ids = list_intersection_int(
+                                        candidate_edge_ids, edge_ids_from_left);
+                                    list_free(edge_ids_from_left);
+                                }
+                            }
+                        }
+                    }
+
+                    /* Infer from right node (explicit or inferred label) */
+                    if (right_node != NULL && !impossible_pattern)
+                    {
+                        List *right_vertex_ids = NIL;
+                        bool have_right_constraint = false;
+
+                        if (right_node->label != NULL)
+                        {
+                            label_cache_data *lcd = search_label_name_graph_cache(
+                                right_node->label, cpstate->graph_oid);
+                            if (lcd != NULL && lcd->kind == LABEL_KIND_VERTEX)
+                            {
+                                right_vertex_ids = list_make1_int(lcd->id);
+                                have_right_constraint = true;
+                            }
+                        }
+                        else if (right_node->inferred_label_ids != NIL)
+                        {
+                            right_vertex_ids = list_copy(right_node->inferred_label_ids);
+                            have_right_constraint = true;
+                        }
+
+                        if (right_vertex_ids != NIL)
+                        {
+                            ListCell *vlc;
+                            List *edge_ids_from_right = NIL;
+
+                            foreach(vlc, right_vertex_ids)
+                            {
+                                int32 vid = lfirst_int(vlc);
+                                List *eids = (rel->dir == CYPHER_REL_DIR_LEFT)
+                                    ? get_edge_labels_from_start_vertex(cpstate->graph_oid, vid)
+                                    : get_edge_labels_from_end_vertex(cpstate->graph_oid, vid);
+                                
+                                /* Union edge labels from all vertex possibilities */
+                                if (eids != NIL)
+                                {
+                                    ListCell *elc;
+                                    foreach(elc, eids)
+                                    {
+                                        int32 eid = lfirst_int(elc);
+                                        if (!list_member_int(edge_ids_from_right, eid))
+                                            edge_ids_from_right = lappend_int(edge_ids_from_right, eid);
+                                    }
+                                    list_free(eids);
+                                }
+                            }
+                            list_free(right_vertex_ids);
+
+                            /*
+                             * If we have a right vertex constraint but no edges found,
+                             * this pattern is impossible
+                             */
+                            if (edge_ids_from_right == NIL && have_right_constraint)
+                            {
+                                impossible_pattern = true;
+                            }
+                            else if (edge_ids_from_right != NIL)
+                            {
+                                if (candidate_edge_ids == NIL)
+                                    candidate_edge_ids = edge_ids_from_right;
+                                else
+                                {
+                                    candidate_edge_ids = list_intersection_int(
+                                        candidate_edge_ids, edge_ids_from_right);
+                                    list_free(edge_ids_from_right);
+                                    
+                                    /* Empty intersection also means impossible */
+                                    if (candidate_edge_ids == NIL)
+                                        impossible_pattern = true;
+                                }
+                            }
+                        }
+                    }
+
+                    /* 
+                     * If pattern is impossible, set a special marker.
+                     * We use an empty list with a sentinel value to indicate impossibility.
+                     */
+                    if (impossible_pattern)
+                    {
+                        /* 
+                         * Use label_id = -1 as a sentinel for impossible pattern.
+                         * The planner will add a one-time false filter when it sees this.
+                         */
+                        rel->inferred_label_ids = list_make1_int(-1);
+                        changed = true;
+                        elog(DEBUG1, "Iteration %d: Pattern impossible for edge '%s' - no matching edges",
+                             iteration, rel->name ? rel->name : "(anonymous)");
+                    }
+                    /* Store inferred edge labels */
+                    else if (list_length(candidate_edge_ids) >= 1)
+                    {
+                        rel->inferred_label_ids = candidate_edge_ids;
+                        changed = true;
+                        elog(DEBUG1, "Iteration %d: Inferred %d edge labels for '%s'",
+                             iteration, list_length(candidate_edge_ids),
+                             rel->name ? rel->name : "(anonymous)");
+                    }
+                }
+            }
+            i++;
+        }
+
+        /*
+         * Step 2: Infer vertex labels from edge labels
+         * (both explicit labels and previously inferred labels)
+         * We continue refining even if already inferred to intersect constraints
+         */
+        i = 0;
+        foreach(lc, path->path)
+        {
+            if (i % 2 == 0)
+            {
+                /* Process vertex at even index */
+                cypher_node *node = lfirst(lc);
+
+                /* Only process if not explicitly labeled */
+                if (node->label == NULL)
+                {
+                    List *candidate_label_ids = NIL;
+                    cypher_relationship *left_edge = NULL;
+                    cypher_relationship *right_edge = NULL;
+
+                    /* Start with existing inferred labels if any */
+                    if (node->inferred_label_ids != NIL)
+                        candidate_label_ids = list_copy(node->inferred_label_ids);
+
+                    /* Check if already bound with a specific label */
+                    if (node->name != NULL)
+                    {
+                        transform_entity *entity = find_variable(cpstate, node->name);
+                        if (entity != NULL && entity->type == ENT_VERTEX)
+                        {
+                            cypher_node *existing_node = entity->entity.node;
+                            if (existing_node->label != NULL &&
+                                strcmp(existing_node->label, AG_DEFAULT_LABEL_VERTEX) != 0)
+                            {
+                                i++;
+                                continue;
+                            }
+                        }
+                    }
+
+                    /* Get adjacent edges */
+                    if (i > 0)
+                        left_edge = list_nth(path->path, i - 1);
+                    if (i < path_len - 1)
+                        right_edge = list_nth(path->path, i + 1);
+
+                    /*
+                     * Infer from left edge (explicit or inferred)
+                     * This node is at the END of left_edge (or START if direction is LEFT)
+                     */
+                    if (left_edge != NULL)
+                    {
+                        List *edge_label_ids = NIL;
+
+                        if (left_edge->label != NULL)
+                        {
+                            label_cache_data *lcd = search_label_name_graph_cache(
+                                left_edge->label, cpstate->graph_oid);
+                            if (lcd != NULL && lcd->kind == LABEL_KIND_EDGE)
+                                edge_label_ids = list_make1_int(lcd->id);
+                        }
+                        else if (left_edge->inferred_label_ids != NIL)
+                        {
+                            edge_label_ids = list_copy(left_edge->inferred_label_ids);
+                        }
+
+                        if (edge_label_ids != NIL)
+                        {
+                            ListCell *elc;
+                            List *vertex_labels = NIL;
+
+                            foreach(elc, edge_label_ids)
+                            {
+                                int32 edge_label_id = lfirst_int(elc);
+                                List *labels = (left_edge->dir == CYPHER_REL_DIR_LEFT)
+                                    ? get_edge_start_label_ids(cpstate->graph_oid, edge_label_id)
+                                    : get_edge_end_label_ids(cpstate->graph_oid, edge_label_id);
+                                
+                                if (labels != NIL)
+                                {
+                                    ListCell *vlc;
+                                    foreach(vlc, labels)
+                                    {
+                                        int32 vid = lfirst_int(vlc);
+                                        if (!list_member_int(vertex_labels, vid))
+                                            vertex_labels = lappend_int(vertex_labels, vid);
+                                    }
+                                    list_free(labels);
+                                }
+                            }
+                            list_free(edge_label_ids);
+
+                            if (vertex_labels != NIL)
+                            {
+                                if (candidate_label_ids == NIL)
+                                    candidate_label_ids = vertex_labels;
+                                else
+                                {
+                                    candidate_label_ids = list_intersection_int(
+                                        candidate_label_ids, vertex_labels);
+                                    list_free(vertex_labels);
+                                }
+                            }
+                        }
+                    }
+
+                    /*
+                     * Infer from right edge (explicit or inferred)
+                     * This node is at the START of right_edge (or END if direction is LEFT)
+                     */
+                    if (right_edge != NULL)
+                    {
+                        List *edge_label_ids = NIL;
+
+                        if (right_edge->label != NULL)
+                        {
+                            label_cache_data *lcd = search_label_name_graph_cache(
+                                right_edge->label, cpstate->graph_oid);
+                            if (lcd != NULL && lcd->kind == LABEL_KIND_EDGE)
+                                edge_label_ids = list_make1_int(lcd->id);
+                        }
+                        else if (right_edge->inferred_label_ids != NIL)
+                        {
+                            edge_label_ids = list_copy(right_edge->inferred_label_ids);
+                        }
+
+                        if (edge_label_ids != NIL)
+                        {
+                            ListCell *elc;
+                            List *vertex_labels = NIL;
+
+                            foreach(elc, edge_label_ids)
+                            {
+                                int32 edge_label_id = lfirst_int(elc);
+                                List *labels = (right_edge->dir == CYPHER_REL_DIR_LEFT)
+                                    ? get_edge_end_label_ids(cpstate->graph_oid, edge_label_id)
+                                    : get_edge_start_label_ids(cpstate->graph_oid, edge_label_id);
+                                
+                                if (labels != NIL)
+                                {
+                                    ListCell *vlc;
+                                    foreach(vlc, labels)
+                                    {
+                                        int32 vid = lfirst_int(vlc);
+                                        if (!list_member_int(vertex_labels, vid))
+                                            vertex_labels = lappend_int(vertex_labels, vid);
+                                    }
+                                    list_free(labels);
+                                }
+                            }
+                            list_free(edge_label_ids);
+
+                            if (vertex_labels != NIL)
+                            {
+                                if (candidate_label_ids == NIL)
+                                    candidate_label_ids = vertex_labels;
+                                else
+                                {
+                                    candidate_label_ids = list_intersection_int(
+                                        candidate_label_ids, vertex_labels);
+                                    list_free(vertex_labels);
+                                }
+                            }
+                        }
+                    }
+
+                    /* Store inferred vertex labels if changed */
+                    if (list_length(candidate_label_ids) >= 1)
+                    {
+                        /* Check if this is a refinement (fewer labels than before) */
+                        if (node->inferred_label_ids == NIL ||
+                            list_length(candidate_label_ids) < list_length(node->inferred_label_ids))
+                        {
+                            if (node->inferred_label_ids != NIL)
+                                list_free(node->inferred_label_ids);
+                            node->inferred_label_ids = candidate_label_ids;
+                            changed = true;
+                            elog(DEBUG1, "Iteration %d: Inferred %d vertex labels for '%s'",
+                                 iteration, list_length(candidate_label_ids),
+                                 node->name ? node->name : "(anonymous)");
+                        }
+                        else
+                        {
+                            list_free(candidate_label_ids);
+                        }
+                    }
+                }
+            }
+            i++;
+        }
+
+    } while (changed && iteration < max_iterations);
+
+    if (iteration >= max_iterations)
+    {
+        elog(WARNING, "Label inference reached maximum iterations (%d)", max_iterations);
+    }
+}
+
+/*
  * Iterate through the path and construct all edges and necessary vertices
  */
 static List *transform_match_entities(cypher_parsestate *cpstate, Query *query,
@@ -4408,6 +4872,15 @@ static List *transform_match_entities(cypher_parsestate *cpstate, Query *query,
     transform_entity *prev_entity = NULL;
     bool special_VLE_case = false;
     bool valid_label = true;
+
+    /*
+     * Pre-pass: Infer labels for unlabeled vertices and edges based on
+     * the ag_graph_schema catalog. This optimizes the query plan by
+     * avoiding UNION scans over all vertex/edge tables.
+     * This optimization can be disabled via: SET age.infer_labels = off;
+     */
+    if (age_infer_labels)
+        infer_labels_in_path(cpstate, path);
 
     special_VLE_case = isa_special_VLE_case(path);
     valid_label = path_check_valid_label(path, cpstate);
@@ -5203,7 +5676,84 @@ static Expr *transform_cypher_edge(cypher_parsestate *cpstate,
 
     schema_name = get_graph_namespace_name(cpstate->graph_name);
 
-    if (valid_label)
+    /*
+     * Handle inferred edge labels - register them with the graph
+     * optimization context so the planner can filter the AppendPath.
+     * The scan will still use the parent edge table with inheritance,
+     * but the planner hook will prune children not in the inferred list.
+     */
+    if (rel->inferred_label_ids != NIL &&
+        list_length(rel->inferred_label_ids) >= 1)
+    {
+        /* Check for impossible pattern sentinel (-1) */
+        if (list_length(rel->inferred_label_ids) == 1 &&
+            linitial_int(rel->inferred_label_ids) == -1)
+        {
+            /* 
+             * This pattern is impossible - register an empty list to signal
+             * the planner to add a one-time false filter.
+             */
+            graph_opt_add_inferred_labels(rel->name, NIL);
+            elog(DEBUG1, "Registered impossible pattern for edge '%s'", rel->name);
+        }
+        else
+        {
+            List *child_relids = NIL;
+            ListCell *lc;
+
+            /* Convert label IDs to relation OIDs */
+            foreach(lc, rel->inferred_label_ids)
+            {
+                int32 label_id = lfirst_int(lc);
+                Oid child_relid = label_id_to_relation(cpstate->graph_oid, label_id);
+
+                if (OidIsValid(child_relid))
+                {
+                    child_relids = lappend_oid(child_relids, child_relid);
+                }
+            }
+
+            /* Register with the optimization context using variable name */
+            if (child_relids != NIL)
+            {
+                graph_opt_add_inferred_labels(rel->name, child_relids);
+                elog(DEBUG1, "Registered %d inferred edge labels for edge '%s'",
+                     list_length(child_relids), rel->name);
+            }
+        }
+    }
+
+    /*
+     * Determine which table to scan for this edge:
+     * 1. If exactly one inferred label (and no explicit label), use that table directly
+     * 2. If valid_label is true and explicit label, use the specific label table
+     * 3. Otherwise, fall back to AG_DEFAULT_LABEL_EDGE (all edges)
+     *
+     * Using the single inferred label's table directly (rather than the parent
+     * table with inheritance) produces optimal plans identical to explicit labels.
+     */
+    if (rel->inferred_label_ids != NIL &&
+        list_length(rel->inferred_label_ids) == 1 &&
+        linitial_int(rel->inferred_label_ids) != -1 &&
+        rel->parsed_label == NULL)
+    {
+        /* Single inferred label with no explicit label - use directly */
+        int32 label_id = linitial_int(rel->inferred_label_ids);
+        label_cache_data *lcd = search_label_graph_oid_cache(
+            cpstate->graph_oid, label_id);
+
+        if (lcd != NULL && lcd->kind == LABEL_KIND_EDGE)
+        {
+            rel_name = get_label_relation_name(NameStr(lcd->name), cpstate->graph_oid);
+            elog(DEBUG1, "Using single inferred label '%s' directly for edge '%s'",
+                 NameStr(lcd->name), rel->name);
+        }
+        else
+        {
+            rel_name = AG_DEFAULT_LABEL_EDGE;
+        }
+    }
+    else if (valid_label)
     {
         rel_name = get_label_relation_name(rel->label, cpstate->graph_oid);
     }
@@ -5490,7 +6040,70 @@ static Expr *transform_cypher_node(cypher_parsestate *cpstate,
     /* now build a new vertex */
     schema_name = get_graph_namespace_name(cpstate->graph_name);
 
-    if (valid_label)
+    /*
+     * Handle multiple inferred labels - register them with the graph
+     * optimization context so the planner can filter the AppendPath.
+     * The scan will still use the parent vertex table with inheritance,
+     * but the planner hook will prune children not in the inferred list.
+     */
+    if (node->inferred_label_ids != NIL &&
+        list_length(node->inferred_label_ids) >= 1)
+    {
+        List *child_relids = NIL;
+        ListCell *lc;
+
+        /* Convert label IDs to relation OIDs */
+        foreach(lc, node->inferred_label_ids)
+        {
+            int32 label_id = lfirst_int(lc);
+            Oid child_relid = label_id_to_relation(cpstate->graph_oid, label_id);
+
+            if (OidIsValid(child_relid))
+            {
+                child_relids = lappend_oid(child_relids, child_relid);
+            }
+        }
+
+        /* Register with the optimization context using variable name */
+        if (child_relids != NIL)
+        {
+            graph_opt_add_inferred_labels(node->name, child_relids);
+            elog(DEBUG1, "Registered %d inferred labels for vertex '%s'",
+                 list_length(child_relids), node->name);
+        }
+    }
+
+    /*
+     * Determine which table to scan for this vertex:
+     * 1. If exactly one inferred label (and no explicit label), use that table directly
+     * 2. If valid_label is true and explicit label, use the specific label table
+     * 3. Otherwise, fall back to AG_DEFAULT_LABEL_VERTEX (all vertices)
+     *
+     * Using the single inferred label's table directly (rather than the parent
+     * table with inheritance) produces optimal plans identical to explicit labels.
+     */
+    if (node->inferred_label_ids != NIL &&
+        list_length(node->inferred_label_ids) == 1 &&
+        linitial_int(node->inferred_label_ids) != -1 &&
+        node->parsed_label == NULL)
+    {
+        /* Single inferred label with no explicit label - use directly */
+        int32 label_id = linitial_int(node->inferred_label_ids);
+        label_cache_data *lcd = search_label_graph_oid_cache(
+            cpstate->graph_oid, label_id);
+
+        if (lcd != NULL && lcd->kind == LABEL_KIND_VERTEX)
+        {
+            rel_name = get_label_relation_name(NameStr(lcd->name), cpstate->graph_oid);
+            elog(DEBUG1, "Using single inferred label '%s' directly for vertex '%s'",
+                 NameStr(lcd->name), node->name);
+        }
+        else
+        {
+            rel_name = AG_DEFAULT_LABEL_VERTEX;
+        }
+    }
+    else if (valid_label)
     {
         rel_name = get_label_relation_name(node->label, cpstate->graph_oid);
     }
@@ -5503,7 +6116,7 @@ static Expr *transform_cypher_node(cypher_parsestate *cpstate,
     alias = makeAlias(node->name, NIL);
 
     pnsi = addRangeTableEntry(pstate, label_range_var, alias,
-                             label_range_var->inh, true);
+                              label_range_var->inh, true);
 
     Assert(pnsi != NULL);
 

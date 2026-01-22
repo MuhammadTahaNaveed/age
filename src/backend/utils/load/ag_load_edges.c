@@ -19,6 +19,7 @@
 
 #include "postgres.h"
 
+#include "catalog/ag_label.h"
 #include "utils/load/ag_load_edges.h"
 #include "utils/load/csv.h"
 
@@ -96,6 +97,17 @@ void edge_row_cb(int delim __attribute__((unused)), void *data)
         start_vertex_type_id = get_label_id(cr->fields[1], cr->graph_oid);
         end_id_int = strtol(cr->fields[2], NULL, 10);
         end_vertex_type_id = get_label_id(cr->fields[3], cr->graph_oid);
+
+        /*
+         * Track edge schema: record which vertex labels this edge label connects.
+         * Only insert if this combination doesn't exist yet.
+         */
+        if (!edge_schema_entry_exists(cr->graph_oid, cr->label_id,
+                                       start_vertex_type_id, end_vertex_type_id))
+        {
+            insert_edge_schema_entry(cr->graph_oid, cr->label_id,
+                                      start_vertex_type_id, end_vertex_type_id);
+        }
 
         start_vertex_graph_id = make_graphid(start_vertex_type_id, start_id_int);
         end_vertex_graph_id = make_graphid(end_vertex_type_id, end_id_int);

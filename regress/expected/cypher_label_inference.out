@@ -1,0 +1,1723 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+LOAD 'age';
+SET search_path TO ag_catalog;
+--
+-- Label Inference Tests
+--
+SELECT create_graph('label_inference');
+NOTICE:  graph "label_inference" has been created
+ create_graph 
+--------------
+ 
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    CREATE (:node1 {id: 1})-[:edge1]->(:node2 {id: 2})-[:edge2]->(:node3 {id: 3})-[:edge3]->(:node4 {id: 4})-[:edge4]->(:node5 {id: 5})
+$$) AS (a agtype);
+ a 
+---
+(0 rows)
+
+-- Verify schema entries
+SELECT * FROM ag_catalog.ag_graph_schema 
+WHERE graph = (SELECT graphid FROM ag_catalog.ag_graph WHERE name = 'label_inference')
+ORDER BY edge_label_id, start_label_id, end_label_id;
+ graph | edge_label_id | start_label_id | end_label_id 
+-------+---------------+----------------+--------------
+ 20354 |             4 |              3 |            5
+ 20354 |             6 |              5 |            7
+ 20354 |             8 |              7 |            9
+ 20354 |            10 |              9 |           11
+(4 rows)
+
+--
+-- Test 1: Single edge pattern
+--
+-- 1.1: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+               QUERY PLAN               
+----------------------------------------
+ Hash Join
+   Hash Cond: (e.end_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.start_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node1 a
+   ->  Hash
+         ->  Seq Scan on node2 b
+(9 rows)
+
+-- 1.2: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e]->(b:node2) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e]->(b:node2) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+               QUERY PLAN               
+----------------------------------------
+ Hash Join
+   Hash Cond: (e.end_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.start_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node1 a
+   ->  Hash
+         ->  Seq Scan on node2 b
+(9 rows)
+
+-- 1.3: Both vertices labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e]->(b:node2) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e]->(b:node2) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+               QUERY PLAN               
+----------------------------------------
+ Hash Join
+   Hash Cond: (e.end_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.start_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node1 a
+   ->  Hash
+         ->  Seq Scan on node2 b
+(9 rows)
+
+-- 1.4: Edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e:edge1]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e:edge1]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+               QUERY PLAN               
+----------------------------------------
+ Hash Join
+   Hash Cond: (e.end_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.start_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node1 a
+   ->  Hash
+         ->  Seq Scan on node2 b
+(9 rows)
+
+--
+-- Test 2: Single edge pattern - backward direction
+--
+-- 2.1: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node2)<-[e]-(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node2)<-[e]-(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+              QUERY PLAN               
+---------------------------------------
+ Hash Join
+   Hash Cond: (e.start_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.end_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node2 a
+   ->  Hash
+         ->  Seq Scan on node1 b
+(9 rows)
+
+-- 2.2: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e]-(b:node1) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e]-(b:node1) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+              QUERY PLAN               
+---------------------------------------
+ Hash Join
+   Hash Cond: (e.start_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.end_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node2 a
+   ->  Hash
+         ->  Seq Scan on node1 b
+(9 rows)
+
+-- 2.3: Both vertices labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node2)<-[e]-(b:node1) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node2)<-[e]-(b:node1) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+              QUERY PLAN               
+---------------------------------------
+ Hash Join
+   Hash Cond: (e.start_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.end_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node2 a
+   ->  Hash
+         ->  Seq Scan on node1 b
+(9 rows)
+
+-- 2.4: Edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e:edge1]-(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e:edge1]-(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+              QUERY PLAN               
+---------------------------------------
+ Hash Join
+   Hash Cond: (e.start_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.end_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node2 a
+   ->  Hash
+         ->  Seq Scan on node1 b
+(9 rows)
+
+--
+-- Test 3: Two-hop patterns - forward direction
+--
+-- 3.1: Labeled start vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 3.2: Labeled end vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2]->(c:node3) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2]->(c:node3) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 3.3: Labeled middle vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b:node2)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b:node2)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 3.4: First edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1:edge1]->(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1:edge1]->(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 3.5: Last edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2:edge2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 1 | 2 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2:edge2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+--
+-- Test 4: Two-hop patterns - backward direction
+--
+-- 4.1: Labeled end vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c:node3) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 5 | 4 | 3
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c:node3) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 4.2: Labeled start vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node3)<-[e1]-(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node3)<-[e1]-(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge2 e1
+               ->  Hash
+                     ->  Seq Scan on node3 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node1 c
+(18 rows)
+
+-- 4.3: Labeled middle vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b:node2)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b:node2)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge2 e1
+               ->  Hash
+                     ->  Seq Scan on node3 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node1 c
+(18 rows)
+
+-- 4.4: First edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1:edge2]-(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1:edge2]-(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge2 e1
+               ->  Hash
+                     ->  Seq Scan on node3 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node1 c
+(18 rows)
+
+-- 4.5: Last edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2:edge1]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+ 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2:edge1]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge2 e1
+               ->  Hash
+                     ->  Seq Scan on node3 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node1 c
+(18 rows)
+
+--
+-- Test 5: Three-hop patterns - forward direction
+--
+-- 5.1: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+-- 5.2: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2]->(c)-[e3]->(d:node4) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2]->(c)-[e3]->(d:node4) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+-- 5.3: Labeled middle vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b:node2)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b:node2)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+-- 5.4: First edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1:edge1]->(b)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1:edge1]->(b)-[e2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+-- 5.5: Last edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2]->(c)-[e3:edge3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2]->(c)-[e3:edge3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+-- 5.6 : Middle edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2:edge2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 1 | 2 | 3 | 4
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2:edge2]->(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node4 d
+(26 rows)
+
+--
+-- Test 6: Three-hop patterns - backward direction
+--
+-- 6.1: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d:node2) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 5 | 4 | 3 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d:node2) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge2 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node2 d
+(26 rows)
+
+-- 6.2: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node4)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node4)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge3 e1
+               ->  Hash
+                     ->  Seq Scan on node4 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node3 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge1 e3
+                     ->  Hash
+                           ->  Seq Scan on node2 c
+               ->  Hash
+                     ->  Seq Scan on node1 d
+(26 rows)
+
+-- 6.3: Labeled middle vertex
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c:node3)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 5 | 4 | 3 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c:node3)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge2 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Seq Scan on node2 d
+(26 rows)
+
+-- 6.4: First edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1:edge3]-(b)<-[e2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1:edge3]-(b)<-[e2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge3 e1
+               ->  Hash
+                     ->  Seq Scan on node4 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node3 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge1 e3
+                     ->  Hash
+                           ->  Seq Scan on node2 c
+               ->  Hash
+                     ->  Seq Scan on node1 d
+(26 rows)
+
+-- 6.5: Last edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3:edge1]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3:edge1]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge3 e1
+               ->  Hash
+                     ->  Seq Scan on node4 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node3 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge1 e3
+                     ->  Hash
+                           ->  Seq Scan on node2 c
+               ->  Hash
+                     ->  Seq Scan on node1 d
+(26 rows)
+
+-- 6.6: Middle edge labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2:edge2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+ 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2:edge2]-(c)<-[e3]-(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge3 e1
+               ->  Hash
+                     ->  Seq Scan on node4 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node3 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge1 e3
+                     ->  Hash
+                           ->  Seq Scan on node2 c
+               ->  Hash
+                     ->  Seq Scan on node1 d
+(26 rows)
+
+--
+-- Test 7: Four-hop patterns - forward direction (full chain)
+--
+-- 7.1: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 1 | 2 | 3 | 4 | 5
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.end_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.start_id = d.id)
+                                 ->  Seq Scan on edge4 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node4 d
+                           ->  Hash
+                                 ->  Seq Scan on node5 e
+(34 rows)
+
+-- 7.2: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 1 | 2 | 3 | 4 | 5
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.end_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.start_id = d.id)
+                                 ->  Seq Scan on edge4 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node4 d
+                           ->  Hash
+                                 ->  Seq Scan on node5 e
+(34 rows)
+
+-- 7.3: Both ends labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 1 | 2 | 3 | 4 | 5
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)-[e2]->(c)-[e3]->(d)-[e4]->(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.end_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.start_id = d.id)
+                                 ->  Seq Scan on edge4 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node4 d
+                           ->  Hash
+                                 ->  Seq Scan on node5 e
+(34 rows)
+
+-- 7.4: Middle vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)-[e1]->(b)-[e2]->(c:node3)-[e3]->(d)-[e4]->(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 1 | 2 | 3 | 4 | 5
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)-[e1]->(b)-[e2]->(c:node3)-[e3]->(d)-[e4]->(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge3 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.end_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.start_id = d.id)
+                                 ->  Seq Scan on edge4 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node4 d
+                           ->  Hash
+                                 ->  Seq Scan on node5 e
+(34 rows)
+
+--
+-- Test 8: Four-hop patterns - backward direction (full chain)
+--
+-- 8.1: End vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+(0 rows)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e:node5) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+        QUERY PLAN        
+--------------------------
+ Result
+   One-Time Filter: false
+(2 rows)
+
+-- 8.2: Start vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node5)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 5 | 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node5)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge2 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.start_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.end_id = d.id)
+                                 ->  Seq Scan on edge1 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node2 d
+                           ->  Hash
+                                 ->  Seq Scan on node1 e
+(34 rows)
+
+-- 8.3: Both ends labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node5)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e:node1) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 5 | 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node5)<-[e1]-(b)<-[e2]-(c)<-[e3]-(d)<-[e4]-(e:node1) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge2 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.start_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.end_id = d.id)
+                                 ->  Seq Scan on edge1 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node2 d
+                           ->  Hash
+                                 ->  Seq Scan on node1 e
+(34 rows)
+
+-- 8.4: Middle vertex labeled
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a)<-[e1]-(b)<-[e2]-(c:node3)<-[e3]-(d)<-[e4]-(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+ a | b | c | d | e 
+---+---+---+---+---
+ 5 | 4 | 3 | 2 | 1
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a)<-[e1]-(b)<-[e2]-(c:node3)<-[e3]-(d)<-[e4]-(e) RETURN a.id, b.id, c.id, d.id, e.id
+$$) AS (a agtype, b agtype, c agtype, d agtype, e agtype);
+                               QUERY PLAN                                
+-------------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness4(e1.id, e2.id, e3.id, e4.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge4 e1
+               ->  Hash
+                     ->  Seq Scan on node5 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge3 e2
+                     ->  Hash
+                           ->  Seq Scan on node4 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.start_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.end_id = c.id)
+                     ->  Seq Scan on edge2 e3
+                     ->  Hash
+                           ->  Seq Scan on node3 c
+               ->  Hash
+                     ->  Hash Join
+                           Hash Cond: (e4.start_id = e.id)
+                           ->  Hash Join
+                                 Hash Cond: (e4.end_id = d.id)
+                                 ->  Seq Scan on edge1 e4
+                                 ->  Hash
+                                       ->  Seq Scan on node2 d
+                           ->  Hash
+                                 ->  Seq Scan on node1 e
+(34 rows)
+
+--
+-- Test 9: Mixed direction patterns
+--
+-- 9.1: Forward then backward
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+(0 rows)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)<-[e2]-(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node1 c
+(18 rows)
+
+-- 9.2: Backward then forward
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node3)<-[e1]-(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+ a | b | c 
+---+---+---
+(0 rows)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node3)<-[e1]-(b)-[e2]->(c) RETURN a.id, b.id, c.id
+$$) AS (a agtype, b agtype, c agtype);
+                           QUERY PLAN                            
+-----------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.end_id = c.id)
+   ->  Hash Join
+         Hash Cond: (e1.start_id = b.id)
+         Join Filter: _ag_enforce_edge_uniqueness2(e1.id, e2.id)
+         ->  Hash Join
+               Hash Cond: (e1.end_id = a.id)
+               ->  Seq Scan on edge2 e1
+               ->  Hash
+                     ->  Seq Scan on node3 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.start_id = b.id)
+                     ->  Seq Scan on edge2 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Seq Scan on node3 c
+(18 rows)
+
+-- 9.3: Forward-backward-forward
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e1]->(b)<-[e2]-(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+ a | b | c | d 
+---+---+---+---
+(0 rows)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e1]->(b)<-[e2]-(c)-[e3]->(d) RETURN a.id, b.id, c.id, d.id
+$$) AS (a agtype, b agtype, c agtype, d agtype);
+                            QUERY PLAN                            
+------------------------------------------------------------------
+ Hash Join
+   Hash Cond: (e2.start_id = c.id)
+   Join Filter: _ag_enforce_edge_uniqueness3(e1.id, e2.id, e3.id)
+   ->  Hash Join
+         Hash Cond: (e1.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e1.start_id = a.id)
+               ->  Seq Scan on edge1 e1
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Hash Join
+                     Hash Cond: (e2.end_id = b.id)
+                     ->  Seq Scan on edge1 e2
+                     ->  Hash
+                           ->  Seq Scan on node2 b
+   ->  Hash
+         ->  Hash Join
+               Hash Cond: (e3.end_id = d.id)
+               ->  Hash Join
+                     Hash Cond: (e3.start_id = c.id)
+                     ->  Seq Scan on edge1 e3
+                     ->  Hash
+                           ->  Seq Scan on node1 c
+               ->  Hash
+                     ->  Seq Scan on node2 d
+(26 rows)
+
+--
+-- Test 10: GUC disable test
+--
+-- 10.1: Disable inference and verify all labels are scanned
+SET age.infer_labels = off;
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+                                 QUERY PLAN                                 
+----------------------------------------------------------------------------
+ Merge Join
+   Merge Cond: (b.id = e.end_id)
+   ->  Merge Append
+         Sort Key: b.id
+         ->  Index Scan using _ag_label_vertex_pkey on _ag_label_vertex b_1
+         ->  Index Scan using node1_pkey on node1 b_2
+         ->  Index Scan using node2_pkey on node2 b_3
+         ->  Index Scan using node3_pkey on node3 b_4
+         ->  Index Scan using node4_pkey on node4 b_5
+         ->  Index Scan using node5_pkey on node5 b_6
+   ->  Sort
+         Sort Key: e.end_id
+         ->  Hash Join
+               Hash Cond: (e.start_id = a.id)
+               ->  Append
+                     ->  Seq Scan on _ag_label_edge e_1
+                     ->  Seq Scan on edge1 e_2
+                     ->  Seq Scan on edge2 e_3
+                     ->  Seq Scan on edge3 e_4
+                     ->  Seq Scan on edge4 e_5
+               ->  Hash
+                     ->  Seq Scan on node1 a
+(22 rows)
+
+-- 10.2: Re-enable inference
+SET age.infer_labels = on;
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+ a | b 
+---+---
+ 1 | 2
+(1 row)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e]->(b) RETURN a.id, b.id
+$$) AS (a agtype, b agtype);
+               QUERY PLAN               
+----------------------------------------
+ Hash Join
+   Hash Cond: (e.end_id = b.id)
+   ->  Hash Join
+         Hash Cond: (e.start_id = a.id)
+         ->  Seq Scan on edge1 e
+         ->  Hash
+               ->  Seq Scan on node1 a
+   ->  Hash
+         ->  Seq Scan on node2 b
+(9 rows)
+
+--
+-- Test 11: Multiple same-label edges
+--
+-- Add another edge with same labels
+SELECT * FROM cypher('label_inference', $$
+    CREATE (:node1 {id: 10})-[:edge1]->(:node2 {id: 20})
+$$) AS (a agtype);
+ a 
+---
+(0 rows)
+
+-- 11.1: Should return all matching edges
+SELECT * FROM cypher('label_inference', $$
+    MATCH (a:node1)-[e]->(b) RETURN a.id, b.id ORDER BY a.id
+$$) AS (a agtype, b agtype);
+ a  | b  
+----+----
+ 1  | 2
+ 10 | 20
+(2 rows)
+
+SELECT * FROM cypher('label_inference', $$
+    EXPLAIN (COSTS OFF) MATCH (a:node1)-[e]->(b) RETURN a.id, b.id ORDER BY a.id
+$$) AS (a agtype, b agtype);
+                                                                   QUERY PLAN                                                                    
+-------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort
+   Sort Key: (agtype_access_operator(VARIADIC ARRAY[_agtype_build_vertex(a.id, _label_name('20354'::oid, a.id), a.properties), '"id"'::agtype]))
+   ->  Hash Join
+         Hash Cond: (e.end_id = b.id)
+         ->  Hash Join
+               Hash Cond: (e.start_id = a.id)
+               ->  Seq Scan on edge1 e
+               ->  Hash
+                     ->  Seq Scan on node1 a
+         ->  Hash
+               ->  Seq Scan on node2 b
+(11 rows)
+
+--
+-- Cleanup
+--
+SELECT drop_graph('label_inference', true);
+NOTICE:  drop cascades to 11 other objects
+DETAIL:  drop cascades to table label_inference._ag_label_vertex
+drop cascades to table label_inference._ag_label_edge
+drop cascades to table label_inference.node1
+drop cascades to table label_inference.edge1
+drop cascades to table label_inference.node2
+drop cascades to table label_inference.edge2
+drop cascades to table label_inference.node3
+drop cascades to table label_inference.edge3
+drop cascades to table label_inference.node4
+drop cascades to table label_inference.edge4
+drop cascades to table label_inference.node5
+NOTICE:  graph "label_inference" has been dropped
+ drop_graph 
+------------
+ 
+(1 row)
+

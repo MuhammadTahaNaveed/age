@@ -1315,6 +1315,7 @@ path_node:
             n->use_equals = false;
             n->props = $4;
             n->location = @2;
+            n->inferred_label_ids = NIL;
 
             $$ = (Node *)n;
         }
@@ -1330,6 +1331,7 @@ path_node:
             n->use_equals = true;
             n->props = $5;
             n->location = @2;
+            n->inferred_label_ids = NIL;
 
             $$ = (Node *)n;
         }
@@ -1378,6 +1380,7 @@ path_relationship_body:
             n->varlen = $4;
             n->use_equals = false;
             n->props = $5;
+            n->inferred_label_ids = NIL;
 
             $$ = (Node *)n;
         }
@@ -1393,6 +1396,7 @@ path_relationship_body:
             n->varlen = $4;
             n->use_equals = true;
             n->props = $6;
+            n->inferred_label_ids = NIL;
 
             $$ = (Node *)n;
         }
@@ -1409,6 +1413,7 @@ path_relationship_body:
             n->varlen = NULL;
             n->use_equals = false;
             n->props = NULL;
+            n->inferred_label_ids = NIL;
 
             $$ = (Node *)n;
         }
